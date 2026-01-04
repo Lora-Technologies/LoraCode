@@ -36,6 +36,7 @@ from rich.text import Text
 
 from loracode.mdstream import MarkdownStream
 from loracode.i18n import t
+from loracode.auto_approve import ApprovalCategory, AutoApproveManager
 
 from .dump import dump  # noqa: F401
 from .editor import pipe_editor
@@ -324,6 +325,7 @@ class InputOutput:
         root=".",
         notifications=False,
         notifications_command=None,
+        auto_approve_manager=None,
     ):
         self.placeholder = None
         self.interrupted = False
@@ -336,6 +338,9 @@ class InputOutput:
             self.notifications_command = self.get_default_notification_command()
         else:
             self.notifications_command = notifications_command
+        
+        # Initialize auto-approve manager
+        self.auto_approve_manager = auto_approve_manager or AutoApproveManager()
 
         no_color = os.environ.get("NO_COLOR")
         if no_color is not None and no_color != "":
@@ -1023,7 +1028,31 @@ class InputOutput:
         explicit_yes_required=False,
         group=None,
         allow_never=False,
+        category=None,
     ):
+        # Default category to OTHER if not specified
+        if category is None:
+            category = ApprovalCategory.OTHER
+        
+        # Check auto-approve rules first (unless explicit_yes_required)
+        if self.auto_approve_manager and not explicit_yes_required:
+            should_auto, decision = self.auto_approve_manager.should_auto_decide(category)
+            if should_auto:
+                # Record the auto-decision
+                self.auto_approve_manager.record_decision(
+                    category=category,
+                    subject=subject or "",
+                    question=question,
+                    result=decision,
+                    auto_decided=True
+                )
+                # Show feedback to user
+                if decision:
+                    self._show_auto_approved(question, subject)
+                else:
+                    self._show_auto_rejected(question, subject)
+                return decision
+        
         self.num_user_asks += 1
 
         self.ring_bell()
@@ -1140,8 +1169,36 @@ class InputOutput:
 
         hist = f"{question.strip()} {res}"
         self.append_chat_history(hist, linebreak=True, blockquote=True)
+        
+        # Record user decision in auto-approve history
+        if self.auto_approve_manager:
+            self.auto_approve_manager.record_decision(
+                category=category,
+                subject=subject or "",
+                question=question,
+                result=is_yes,
+                auto_decided=False
+            )
 
         return is_yes
+
+    def _show_auto_approved(self, question, subject=None):
+        """Display auto-approved message to the user."""
+        if subject:
+            self.tool_output(f"[auto-approved] {subject}")
+        self.tool_output(f"[auto-approved] {question.strip()}")
+        # Log to chat history
+        hist = f"[auto-approved] {question.strip()}"
+        self.append_chat_history(hist, linebreak=True, blockquote=True)
+
+    def _show_auto_rejected(self, question, subject=None):
+        """Display auto-rejected message to the user."""
+        if subject:
+            self.tool_output(f"[auto-rejected] {subject}")
+        self.tool_output(f"[auto-rejected] {question.strip()}")
+        # Log to chat history
+        hist = f"[auto-rejected] {question.strip()}"
+        self.append_chat_history(hist, linebreak=True, blockquote=True)
 
     @restore_multiline
     def prompt_ask(self, question, default="", subject=None):

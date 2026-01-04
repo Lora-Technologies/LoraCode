@@ -112,16 +112,11 @@ def get_parser(default_config_files, git_root):
         help="Add a model alias (can be used multiple times)",
     )
     group.add_argument(
-        "--reasoning-effort",
-        type=str,
-        help="Set the reasoning_effort API parameter (default: not set)",
-    )
-    group.add_argument(
         "--thinking-tokens",
         type=str,
         help=(
             "Set the thinking token budget for models that support it. Use 0 to disable. (default:"
-            " not set)"
+            " 8096 if model supports thinking)"
         ),
     )
     group.add_argument(
@@ -190,7 +185,7 @@ def get_parser(default_config_files, git_root):
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Check if model accepts settings like reasoning_effort/thinking_tokens (default: True)"
+            "Check if model accepts settings like thinking_tokens (default: True)"
         ),
     )
     group.add_argument(
@@ -735,6 +730,26 @@ def get_parser(default_config_files, git_root):
         action="store_true",
         help="Always say yes to every confirmation",
         default=None,
+    )
+    group.add_argument(
+        "--auto-approve",
+        metavar="CATEGORIES",
+        default=None,
+        help=(
+            "Comma-separated list of categories to auto-approve. "
+            "Use 'all' to approve everything. "
+            "Categories: file_create, file_edit, shell_command, url_add, lint_fix, test_fix, git_repo, analytics"
+        ),
+    )
+    group.add_argument(
+        "--auto-reject",
+        metavar="CATEGORIES",
+        default=None,
+        help=(
+            "Comma-separated list of categories to auto-reject. "
+            "Use 'all' to reject everything. "
+            "Categories: file_create, file_edit, shell_command, url_add, lint_fix, test_fix, git_repo, analytics"
+        ),
     )
     group.add_argument(
         "-v",

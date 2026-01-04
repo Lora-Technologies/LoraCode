@@ -24,6 +24,18 @@ from loracode.lora_code_auth import LoraCodeAuth, Credentials
 
 
 @dataclass
+class ModelCapabilities:
+    """Capabilities of a Lora Code model."""
+    chat: bool = True
+    embedding: bool = False
+    image_generation: bool = False
+    tools: bool = False
+    web_search: bool = False
+    url_context: bool = False
+    thinking: bool = False
+
+
+@dataclass
 class ModelInfo:
     """Information about a Lora Code model."""
     id: str
@@ -31,6 +43,16 @@ class ModelInfo:
     description: str
     context_length: int
     owned_by: str
+    capabilities: ModelCapabilities = None
+    
+    def __post_init__(self):
+        if self.capabilities is None:
+            self.capabilities = ModelCapabilities()
+    
+    @property
+    def supports_thinking(self) -> bool:
+        """Check if model supports thinking/reasoning."""
+        return self.capabilities.thinking if self.capabilities else False
 
 
 class LoraCodeClientError(Exception):
@@ -354,12 +376,25 @@ class LoraCodeClient:
         models = []
         
         for model_data in data.get("data", []):
+            # Parse capabilities
+            caps_data = model_data.get("capabilities", {})
+            capabilities = ModelCapabilities(
+                chat=caps_data.get("chat", True),
+                embedding=caps_data.get("embedding", False),
+                image_generation=caps_data.get("image_generation", False),
+                tools=caps_data.get("tools", False),
+                web_search=caps_data.get("web_search", False),
+                url_context=caps_data.get("url_context", False),
+                thinking=caps_data.get("thinking", False),
+            )
+            
             model = ModelInfo(
                 id=model_data.get("id", ""),
                 name=model_data.get("id", ""),
                 description=model_data.get("description", ""),
                 context_length=model_data.get("context_length", 0),
-                owned_by=model_data.get("owned_by", "lora-code")
+                owned_by=model_data.get("owned_by", "lora-code"),
+                capabilities=capabilities,
             )
             models.append(model)
         

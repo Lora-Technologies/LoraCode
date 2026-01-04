@@ -32,6 +32,7 @@ from loracode.analytics import Analytics
 from loracode.commands import Commands
 from loracode.exceptions import LiteLLMExceptions
 from loracode.history import ChatSummary
+from loracode.auto_approve import ApprovalCategory
 from loracode.io import ConfirmGroup, InputOutput
 from loracode.linter import Linter
 from loracode.llm import litellm
@@ -216,10 +217,6 @@ class Coder:
         thinking_tokens = main_model.get_thinking_tokens()
         if thinking_tokens:
             output += f", {thinking_tokens} think tokens"
-
-        reasoning_effort = main_model.get_reasoning_effort()
-        if reasoning_effort:
-            output += f", reasoning {reasoning_effort}"
 
         if self.add_cache_headers or main_model.caches_by_default:
             output += ", prompt cache"
@@ -942,7 +939,8 @@ class Coder:
             if url not in self.rejected_urls:
                 url = url.rstrip(".',\"")
                 if self.io.confirm_ask(
-                    "Add URL to the chat?", subject=url, group=group, allow_never=True
+                    "Add URL to the chat?", subject=url, group=group, allow_never=True,
+                    category=ApprovalCategory.URL_ADD
                 ):
                     inp += "\n\n"
                     inp += self.commands.cmd_web(url, return_content=True)
@@ -1552,7 +1550,8 @@ class Coder:
             self.auto_commit(edited, context="Ran the linter")
             self.lint_outcome = not lint_errors
             if lint_errors:
-                ok = self.io.confirm_ask("Attempt to fix lint errors?")
+                ok = self.io.confirm_ask("Attempt to fix lint errors?",
+                    category=ApprovalCategory.LINT_FIX)
                 if ok:
                     self.reflected_message = lint_errors
                     return
@@ -1568,7 +1567,8 @@ class Coder:
             test_errors = self.commands.cmd_test(self.test_cmd)
             self.test_outcome = not test_errors
             if test_errors:
-                ok = self.io.confirm_ask("Attempt to fix test errors?")
+                ok = self.io.confirm_ask("Attempt to fix test errors?",
+                    category=ApprovalCategory.TEST_FIX)
                 if ok:
                     self.reflected_message = test_errors
                     return
@@ -2126,7 +2126,8 @@ class Coder:
             return
 
         if not Path(full_path).exists():
-            if not self.io.confirm_ask("Create new file?", subject=path):
+            if not self.io.confirm_ask("Create new file?", subject=path,
+                    category=ApprovalCategory.FILE_CREATE):
                 self.io.tool_output(f"Skipping edits to {path}")
                 return
 
@@ -2145,6 +2146,7 @@ class Coder:
         if not self.io.confirm_ask(
             "Allow edits to file that has not been added to the chat?",
             subject=path,
+            category=ApprovalCategory.FILE_EDIT,
         ):
             self.io.tool_output(f"Skipping edits to {path}")
             return
@@ -2374,6 +2376,7 @@ class Coder:
             explicit_yes_required=True,
             group=group,
             allow_never=True,
+            category=ApprovalCategory.SHELL_COMMAND,
         ):
             return
 

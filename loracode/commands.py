@@ -18,6 +18,7 @@ from loracode.editor import pipe_editor
 from loracode.format_settings import format_settings
 from loracode.help import Help, install_help_extra
 from loracode.i18n import t
+from loracode.auto_approve import ApprovalCategory, ApprovalRule
 from loracode.io import CommandCompletionException
 from loracode.llm import litellm
 from loracode.lora_code_auth import LoraCodeAuth
@@ -383,7 +384,8 @@ class Commands:
                 continue
 
             self.io.tool_output(errors)
-            if not self.io.confirm_ask(t("lint.fix_confirm", filename=fname), default="y"):
+            if not self.io.confirm_ask(t("lint.fix_confirm", filename=fname), default="y",
+                    category=ApprovalCategory.LINT_FIX):
                 continue
 
             if self.coder.repo.is_dirty() and self.coder.dirty_commits:
@@ -788,7 +790,8 @@ class Commands:
                 self.io.tool_output(t("git.add_hint", filename=fname))
                 continue
 
-            if self.io.confirm_ask(t("file.create_confirm", pattern=word, filename=fname)):
+            if self.io.confirm_ask(t("file.create_confirm", pattern=word, filename=fname),
+                    category=ApprovalCategory.FILE_CREATE):
                 try:
                     fname.parent.mkdir(parents=True, exist_ok=True)
                     fname.touch()
@@ -1543,27 +1546,6 @@ class Commands:
         announcements = "\n".join(self.coder.get_announcements())
         self.io.tool_output(announcements)
 
-    def cmd_reasoning_effort(self, args):
-        "Set the reasoning effort level (values: number or low/medium/high depending on model)"
-        model = self.coder.main_model
-
-        if not args.strip():
-            reasoning_value = model.get_reasoning_effort()
-            if reasoning_value is None:
-                self.io.tool_output("Reasoning effort is not currently set.")
-            else:
-                self.io.tool_output(f"Current reasoning effort: {reasoning_value}")
-            return
-
-        value = args.strip()
-        model.set_reasoning_effort(value)
-        reasoning_value = model.get_reasoning_effort()
-        self.io.tool_output(f"Set reasoning effort to {reasoning_value}")
-        self.io.tool_output()
-
-        announcements = "\n".join(self.coder.get_announcements())
-        self.io.tool_output(announcements)
-
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
 
@@ -1764,6 +1746,182 @@ Just show me the edits I need to make.
     def completions_auth(self):
         """Provide completions for auth subcommands."""
         return ["login", "logout", "status"]
+
+    def cmd_auto_approve(self, args):
+        "Set categories to auto-approve (always accept)"
+        if not args.strip():
+            self.io.tool_output("Usage: /auto-approve <category1,category2,...>")
+            self.io.tool_output(f"Available categories: {', '.join(ApprovalCategory.all_categories())}, all")
+            return
+        
+        categories = [cat.strip().lower() for cat in args.split(",") if cat.strip()]
+        
+        if not categories:
+            self.io.tool_error("No categories specified")
+            return
+        
+        manager = self.io.auto_approve_manager
+        if not manager:
+            self.io.tool_error("Auto-approve manager not available")
+            return
+        
+        # Handle 'all' special case
+        if "all" in categories:
+            manager.set_all(ApprovalRule.ALWAYS)
+            self.io.tool_output("All categories set to auto-approve")
+            return
+        
+        # Validate and apply categories
+        valid_categories = ApprovalCategory.all_categories()
+        applied = []
+        invalid = []
+        
+        for cat_name in categories:
+            if cat_name in valid_categories:
+                category = ApprovalCategory.from_string(cat_name)
+                manager.set_rule(category, ApprovalRule.ALWAYS)
+                applied.append(cat_name)
+            else:
+                invalid.append(cat_name)
+        
+        if applied:
+            self.io.tool_output(f"Set to auto-approve: {', '.join(applied)}")
+        if invalid:
+            self.io.tool_warning(f"Invalid categories ignored: {', '.join(invalid)}")
+
+    def completions_auto_approve(self):
+        """Provide completions for auto-approve command."""
+        return ApprovalCategory.all_categories() + ["all"]
+
+    def cmd_auto_reject(self, args):
+        "Set categories to auto-reject (always deny)"
+        if not args.strip():
+            self.io.tool_output("Usage: /auto-reject <category1,category2,...>")
+            self.io.tool_output(f"Available categories: {', '.join(ApprovalCategory.all_categories())}, all")
+            return
+        
+        categories = [cat.strip().lower() for cat in args.split(",") if cat.strip()]
+        
+        if not categories:
+            self.io.tool_error("No categories specified")
+            return
+        
+        manager = self.io.auto_approve_manager
+        if not manager:
+            self.io.tool_error("Auto-approve manager not available")
+            return
+        
+        # Handle 'all' special case
+        if "all" in categories:
+            manager.set_all(ApprovalRule.NEVER)
+            self.io.tool_output("All categories set to auto-reject")
+            return
+        
+        # Validate and apply categories
+        valid_categories = ApprovalCategory.all_categories()
+        applied = []
+        invalid = []
+        
+        for cat_name in categories:
+            if cat_name in valid_categories:
+                category = ApprovalCategory.from_string(cat_name)
+                manager.set_rule(category, ApprovalRule.NEVER)
+                applied.append(cat_name)
+            else:
+                invalid.append(cat_name)
+        
+        if applied:
+            self.io.tool_output(f"Set to auto-reject: {', '.join(applied)}")
+        if invalid:
+            self.io.tool_warning(f"Invalid categories ignored: {', '.join(invalid)}")
+
+    def completions_auto_reject(self):
+        """Provide completions for auto-reject command."""
+        return ApprovalCategory.all_categories() + ["all"]
+
+    def cmd_auto_ask(self, args):
+        "Reset categories to prompt mode (ask user)"
+        if not args.strip():
+            self.io.tool_output("Usage: /auto-ask <category1,category2,...>")
+            self.io.tool_output(f"Available categories: {', '.join(ApprovalCategory.all_categories())}, all")
+            return
+        
+        categories = [cat.strip().lower() for cat in args.split(",") if cat.strip()]
+        
+        if not categories:
+            self.io.tool_error("No categories specified")
+            return
+        
+        manager = self.io.auto_approve_manager
+        if not manager:
+            self.io.tool_error("Auto-approve manager not available")
+            return
+        
+        # Handle 'all' special case
+        if "all" in categories:
+            manager.set_all(ApprovalRule.ASK)
+            self.io.tool_output("All categories reset to ask mode")
+            return
+        
+        # Validate and apply categories
+        valid_categories = ApprovalCategory.all_categories()
+        applied = []
+        invalid = []
+        
+        for cat_name in categories:
+            if cat_name in valid_categories:
+                category = ApprovalCategory.from_string(cat_name)
+                manager.set_rule(category, ApprovalRule.ASK)
+                applied.append(cat_name)
+            else:
+                invalid.append(cat_name)
+        
+        if applied:
+            self.io.tool_output(f"Reset to ask mode: {', '.join(applied)}")
+        if invalid:
+            self.io.tool_warning(f"Invalid categories ignored: {', '.join(invalid)}")
+
+    def completions_auto_ask(self):
+        """Provide completions for auto-ask command."""
+        return ApprovalCategory.all_categories() + ["all"]
+
+    def cmd_auto_status(self, args):
+        "Display current auto-approval settings"
+        manager = self.io.auto_approve_manager
+        if not manager:
+            self.io.tool_error("Auto-approve manager not available")
+            return
+        
+        self.io.tool_output(manager.get_status_display())
+
+    def cmd_auto_history(self, args):
+        "Display recent auto-approval decisions"
+        manager = self.io.auto_approve_manager
+        if not manager:
+            self.io.tool_error("Auto-approve manager not available")
+            return
+        
+        history = manager.get_history(limit=20)
+        
+        if not history:
+            self.io.tool_output("No auto-approval decisions recorded yet.")
+            return
+        
+        self.io.tool_output("Recent Auto-Approval Decisions:")
+        self.io.tool_output("-" * 50)
+        
+        for decision in history:
+            timestamp = decision.timestamp.strftime("%H:%M:%S")
+            result_str = "✓ approved" if decision.result else "✗ rejected"
+            auto_str = "(auto)" if decision.auto_decided else "(user)"
+            
+            self.io.tool_output(
+                f"  [{timestamp}] {decision.category.value}: {result_str} {auto_str}"
+            )
+            if decision.subject:
+                # Truncate long subjects
+                subject = decision.subject[:50] + "..." if len(decision.subject) > 50 else decision.subject
+                self.io.tool_output(f"           Subject: {subject}")
 
 
 def expand_subdir(file_path):

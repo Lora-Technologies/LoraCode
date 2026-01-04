@@ -48,6 +48,7 @@ venv311/
 
 # Testing
 .tox/
+tests/
 .nox/
 .coverage
 .coverage.*

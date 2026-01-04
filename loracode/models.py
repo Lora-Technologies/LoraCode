@@ -392,10 +392,13 @@ class Model(ModelSettings):
         if self.accepts_settings is None:
             self.accepts_settings = []
 
-        model = model.lower()
+        model_lower = model.lower()
 
         if not exact_match:
-            self.apply_generic_model_settings(model)
+            self.apply_generic_model_settings(model_lower)
+
+        # Check API for thinking capability
+        self._apply_api_capabilities(model)
 
         if (
             self.extra_model_settings
@@ -411,15 +414,32 @@ class Model(ModelSettings):
                 else:
                     self.extra_params[key] = value
 
+    def _apply_api_capabilities(self, model_name):
+        """Apply capabilities from API if available."""
+        try:
+            from loracode.lora_code_client import LoraCodeClient
+            client = LoraCodeClient()
+            models = client.list_models()
+            
+            for model_info in models:
+                if model_info.id == model_name:
+                    if model_info.supports_thinking:
+                        if "thinking_tokens" not in self.accepts_settings:
+                            self.accepts_settings.append("thinking_tokens")
+                        # Auto-enable thinking with default budget if not already set
+                        if not self.extra_params or "thinking" not in self.extra_params:
+                            self.set_thinking_tokens("8096")
+                    break
+        except Exception:
+            # Silently fail if API is not available
+            pass
+
     def apply_generic_model_settings(self, model):
         if "/o3-mini" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.use_temperature = False
             self.system_prompt_prefix = "Formatting re-enabled. "
-            self.system_prompt_prefix = "Formatting re-enabled. "
-            if "reasoning_effort" not in self.accepts_settings:
-                self.accepts_settings.append("reasoning_effort")
             return
 
         if "gpt-4.1-mini" in model:
@@ -440,8 +460,6 @@ class Model(ModelSettings):
         if last_segment in ("gpt-5", "gpt-5-2025-08-07"):
             self.use_temperature = False
             self.edit_format = "diff"
-            if "reasoning_effort" not in self.accepts_settings:
-                self.accepts_settings.append("reasoning_effort")
             return
 
         if "/o1-mini" in model:
@@ -463,8 +481,6 @@ class Model(ModelSettings):
             self.use_temperature = False
             self.streaming = False
             self.system_prompt_prefix = "Formatting re-enabled. "
-            if "reasoning_effort" not in self.accepts_settings:
-                self.accepts_settings.append("reasoning_effort")
             return
 
         if "deepseek" in model and "v3" in model:
@@ -741,15 +757,6 @@ class Model(ModelSettings):
             map_tokens = max(map_tokens, 1024)
         return map_tokens
 
-    def set_reasoning_effort(self, effort):
-        """Set the reasoning effort parameter for models that support it"""
-        if effort is not None:
-            if not self.extra_params:
-                self.extra_params = {}
-            if "extra_body" not in self.extra_params:
-                self.extra_params["extra_body"] = {}
-                self.extra_params["extra_body"]["reasoning_effort"] = effort
-
     def parse_token_value(self, value):
         """
         Parse a token value string into an integer.
@@ -829,16 +836,6 @@ class Model(ModelSettings):
                     return f"{int(value)}k"
                 else:
                     return f"{value:.1f}k"
-        return None
-
-    def get_reasoning_effort(self):
-        """Get reasoning effort value if available"""
-        if self.extra_params:
-            if (
-                "extra_body" in self.extra_params
-                and "reasoning_effort" in self.extra_params["extra_body"]
-            ):
-                return self.extra_params["extra_body"]["reasoning_effort"]
         return None
 
     def is_deepseek_r1(self):

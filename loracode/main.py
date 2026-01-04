@@ -29,6 +29,12 @@ from loracode.copypaste import ClipboardWatcher
 from loracode.deprecated import handle_deprecated_model_args
 from loracode.format_settings import format_settings, scrub_sensitive_info
 from loracode.history import ChatSummary
+from loracode.auto_approve import (
+    ApprovalCategory,
+    AutoApproveManager,
+    validate_auto_approve_args,
+    apply_auto_approve_args,
+)
 from loracode.io import InputOutput
 from loracode.lora_code_auth import LoraCodeAuth
 from loracode.lora_code_client import LoraCodeClient, LoraCodeClientError
@@ -231,7 +237,8 @@ def setup_git(git_root, io):
     elif cwd == Path.home():
         io.tool_warning(t("git.home_dir_warning"))
         return
-    elif cwd and io.confirm_ask(t("git.no_repo_found")):
+    elif cwd and io.confirm_ask(t("git.no_repo_found"),
+            category=ApprovalCategory.GIT_REPO):
         git_root = str(cwd.resolve())
         repo = make_new_repo(git_root, io)
 
@@ -299,7 +306,8 @@ def check_gitignore(git_root, io, ask=True):
     if ask:
         io.tool_output(t("git.gitignore_skip"))
         patterns_str = ', '.join(patterns_to_add)
-        if not io.confirm_ask(t("git.gitignore_add", patterns=patterns_str)):
+        if not io.confirm_ask(t("git.gitignore_add", patterns=patterns_str),
+                category=ApprovalCategory.GIT_REPO):
             return
 
     content += "\n".join(patterns_to_add) + "\n"
@@ -614,6 +622,26 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if return_coder and args.yes_always is None:
         args.yes_always = True
 
+    # Create and configure AutoApproveManager
+    auto_approve_manager = AutoApproveManager()
+    
+    # Validate --auto-approve and --auto-reject arguments
+    is_valid, error_msg, approve_cats, reject_cats = validate_auto_approve_args(
+        args.auto_approve, args.auto_reject
+    )
+    
+    if not is_valid:
+        print(f"Error: {error_msg}")
+        return 1
+    
+    # Apply CLI arguments to the manager
+    apply_auto_approve_args(
+        auto_approve_manager,
+        approve_cats,
+        reject_cats,
+        yes_always=args.yes_always or False
+    )
+
     editing_mode = EditingMode.VI if args.vim else EditingMode.EMACS
 
     def get_io(pretty):
@@ -643,6 +671,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             multiline_mode=args.multiline,
             notifications=args.notifications,
             notifications_command=args.notifications_command,
+            auto_approve_manager=auto_approve_manager,
         )
 
     io = get_io(args.pretty)
@@ -703,7 +732,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         if analytics.need_to_ask(args.analytics):
             io.tool_output(t("analytics.privacy"))
             io.tool_output(t("analytics.more_info", url=urls.analytics))
-            disable = not io.confirm_ask(t("analytics.ask"))
+            disable = not io.confirm_ask(t("analytics.ask"),
+                category=ApprovalCategory.ANALYTICS)
 
             analytics.asked_opt_in = True
             if disable:
@@ -853,12 +883,6 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if main_model.remove_reasoning is not None:
         io.tool_warning(t("model.deprecated_reasoning"))
 
-    if args.reasoning_effort is not None:
-        if not args.check_model_accepts_settings or (
-            main_model.accepts_settings and "reasoning_effort" in main_model.accepts_settings
-        ):
-            main_model.set_reasoning_effort(args.reasoning_effort)
-
     if args.thinking_tokens is not None:
         if not args.check_model_accepts_settings or (
             main_model.accepts_settings and "thinking_tokens" in main_model.accepts_settings
@@ -867,7 +891,6 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     if args.check_model_accepts_settings:
         settings_to_check = [
-            {"arg": args.reasoning_effort, "name": "reasoning_effort"},
             {"arg": args.thinking_tokens, "name": "thinking_tokens"},
         ]
 
