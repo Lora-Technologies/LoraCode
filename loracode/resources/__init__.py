@@ -1,0 +1,1 @@
+# Loracode resources package

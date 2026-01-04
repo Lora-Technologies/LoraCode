@@ -1,0 +1,604 @@
+# -*- coding: utf-8 -*-
+import pathlib
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
+
+from .base_coder import Coder
+from .patch_prompts import PatchPrompts
+
+
+class DiffError(ValueError):
+    """Any problem detected while parsing or applying a patch."""
+
+
+class ActionType(str, Enum):
+    ADD = "Add"
+    DELETE = "Delete"
+    UPDATE = "Update"
+
+
+@dataclass
+class Chunk:
+    orig_index: int = -1
+    del_lines: List[str] = field(default_factory=list)
+    ins_lines: List[str] = field(default_factory=list)
+
+
+@dataclass
+class PatchAction:
+    type: ActionType
+    path: str
+    new_content: Optional[str] = None
+    chunks: List[Chunk] = field(default_factory=list)
+    move_path: Optional[str] = None
+
+
+EditResult = Tuple[str, PatchAction]
+
+
+@dataclass
+class Patch:
+    actions: Dict[str, PatchAction] = field(default_factory=dict)
+    fuzz: int = 0
+
+
+def _norm(line: str) -> str:
+    """Strip CR so comparisons work for both LF and CRLF input."""
+    return line.rstrip("\r")
+
+
+def find_context_core(lines: List[str], context: List[str], start: int) -> Tuple[int, int]:
+    """Finds context block, returns start index and fuzz level."""
+    if not context:
+        return start, 0
+
+    for i in range(start, len(lines) - len(context) + 1):
+        if lines[i : i + len(context)] == context:
+            return i, 0
+    norm_context = [s.rstrip() for s in context]
+    for i in range(start, len(lines) - len(context) + 1):
+        if [s.rstrip() for s in lines[i : i + len(context)]] == norm_context:
+            return i, 1
+    norm_context_strip = [s.strip() for s in context]
+    for i in range(start, len(lines) - len(context) + 1):
+        if [s.strip() for s in lines[i : i + len(context)]] == norm_context_strip:
+            return i, 100
+    return -1, 0
+
+
+def find_context(lines: List[str], context: List[str], start: int, eof: bool) -> Tuple[int, int]:
+    """Finds context, handling EOF marker."""
+    if eof:
+        if len(lines) >= len(context):
+            new_index, fuzz = find_context_core(lines, context, len(lines) - len(context))
+            if new_index != -1:
+                return new_index, fuzz
+        new_index, fuzz = find_context_core(lines, context, start)
+        return new_index, fuzz + 10_000
+    return find_context_core(lines, context, start)
+
+
+def peek_next_section(lines: List[str], index: int) -> Tuple[List[str], List[Chunk], int, bool]:
+    """
+    Parses one section (context, -, + lines) of an Update block.
+    Returns: (context_lines, chunks_in_section, next_index, is_eof)
+    """
+    context_lines: List[str] = []
+    del_lines: List[str] = []
+    ins_lines: List[str] = []
+    chunks: List[Chunk] = []
+    mode = "keep"
+    start_index = index
+
+    while index < len(lines):
+        line = lines[index]
+        norm_line = _norm(line)
+
+        if norm_line.startswith(
+            (
+                "@@",
+                "*** End Patch",
+                "*** Update File:",
+                "*** Delete File:",
+                "*** Add File:",
+                "*** End of File",
+            )
+        ):
+            break
+        if norm_line == "***":
+            break
+        if norm_line.startswith("***"):
+            raise DiffError(f"Invalid patch line found in update section: {line}")
+
+        index += 1
+        last_mode = mode
+
+        if line.startswith("+"):
+            mode = "add"
+            line_content = line[1:]
+        elif line.startswith("-"):
+            mode = "delete"
+            line_content = line[1:]
+        elif line.startswith(" "):
+            mode = "keep"
+            line_content = line[1:]
+        elif line.strip() == "":
+            mode = "keep"
+            line_content = ""
+        else:
+            raise DiffError(f"Invalid line prefix in update section: {line}")
+
+        if mode == "keep" and last_mode != "keep":
+            if del_lines or ins_lines:
+                chunks.append(
+                    Chunk(
+                        orig_index=len(context_lines) - len(del_lines),
+                        del_lines=del_lines,
+                        ins_lines=ins_lines,
+                    )
+                )
+            del_lines, ins_lines = [], []
+
+        if mode == "delete":
+            del_lines.append(line_content)
+            context_lines.append(line_content)
+        elif mode == "add":
+            ins_lines.append(line_content)
+        elif mode == "keep":
+            context_lines.append(line_content)
+
+    if del_lines or ins_lines:
+        chunks.append(
+            Chunk(
+                orig_index=len(context_lines) - len(del_lines),
+                del_lines=del_lines,
+                ins_lines=ins_lines,
+            )
+        )
+
+    is_eof = False
+    if index < len(lines) and _norm(lines[index]) == "*** End of File":
+        index += 1
+        is_eof = True
+
+    if index == start_index and not is_eof:
+        raise DiffError("Empty patch section found.")
+
+    return context_lines, chunks, index, is_eof
+
+
+def identify_files_needed(text: str) -> List[str]:
+    """Extracts file paths from Update and Delete actions."""
+    lines = text.splitlines()
+    paths = set()
+    for line in lines:
+        norm_line = _norm(line)
+        if norm_line.startswith("*** Update File: "):
+            paths.add(norm_line[len("*** Update File: ") :].strip())
+        elif norm_line.startswith("*** Delete File: "):
+            paths.add(norm_line[len("*** Delete File: ") :].strip())
+    return list(paths)
+
+
+class PatchCoder(Coder):
+    """
+    A coder that uses a custom patch format for code modifications,
+    inspired by the format described in tmp.gpt41edits.txt.
+    Applies patches using logic adapted from the reference apply_patch.py script.
+    """
+
+    edit_format = "patch"
+    gpt_prompts = PatchPrompts()
+
+    def get_edits(self) -> List[EditResult]:
+        """
+        Parses the LLM response content (containing the patch) into a list of
+        tuples, where each tuple contains the file path and the PatchAction object.
+        """
+        content = self.partial_response_content
+        if not content or not content.strip():
+            return []
+
+        lines = content.splitlines()
+        if (
+            len(lines) < 2
+            or not _norm(lines[0]).startswith("*** Begin Patch")
+        ):
+            is_patch_like = any(
+                _norm(line).startswith(
+                    ("@@", "*** Update File:", "*** Add File:", "*** Delete File:")
+                )
+                for line in lines
+            )
+            if not is_patch_like:
+                self.io.tool_warning("Response does not appear to be in patch format.")
+                return []
+            self.io.tool_warning(
+                "Patch format warning: Missing '*** Begin Patch'/'*** End Patch' sentinels."
+            )
+            start_index = 0
+        else:
+            start_index = 1
+
+        needed_paths = identify_files_needed(content)
+        current_files: Dict[str, str] = {}
+        for rel_path in needed_paths:
+            abs_path = self.abs_root_path(rel_path)
+            try:
+                # Use io.read_text to handle potential errors/encodings
+                file_content = self.io.read_text(abs_path)
+                if file_content is None:
+                    raise DiffError(
+                        f"File referenced in patch not found or could not be read: {rel_path}"
+                    )
+                current_files[rel_path] = file_content
+            except FileNotFoundError:
+                raise DiffError(f"File referenced in patch not found: {rel_path}")
+            except IOError as e:
+                raise DiffError(f"Error reading file {rel_path}: {e}")
+
+        try:
+            patch_obj = self._parse_patch_text(lines, start_index, current_files)
+            results = []
+            for path, action in patch_obj.actions.items():
+                results.append((path, action))
+            return results
+        except DiffError as e:
+            raise ValueError(f"Error parsing patch content: {e}")
+        except Exception as e:
+            raise ValueError(f"Unexpected error parsing patch: {e}")
+
+    def _parse_patch_text(
+        self, lines: List[str], start_index: int, current_files: Dict[str, str]
+    ) -> Patch:
+        """
+        Parses patch content lines into a Patch object.
+        Adapted from the Parser class in apply_patch.py.
+        """
+        patch = Patch()
+        index = start_index
+        fuzz_accumulator = 0
+
+        while index < len(lines):
+            line = lines[index]
+            norm_line = _norm(line)
+
+            if norm_line == "*** End Patch":
+                index += 1
+                break
+
+            if norm_line.startswith("*** Update File: "):
+                path = norm_line[len("*** Update File: ") :].strip()
+                index += 1
+                if not path:
+                    raise DiffError("Update File action missing path.")
+
+                move_to = None
+                if index < len(lines) and _norm(lines[index]).startswith("*** Move to: "):
+                    move_to = _norm(lines[index])[len("*** Move to: ") :].strip()
+                    index += 1
+                    if not move_to:
+                        raise DiffError("Move to action missing path.")
+
+                if path not in current_files:
+                    raise DiffError(f"Update File Error - missing file content for: {path}")
+
+                file_content = current_files[path]
+
+                existing_action = patch.actions.get(path)
+                if existing_action is not None:
+                    if existing_action.type != ActionType.UPDATE:
+                        raise DiffError(f"Conflicting actions for file: {path}")
+
+                    new_action, index, fuzz = self._parse_update_file_sections(
+                        lines, index, file_content
+                    )
+                    existing_action.chunks.extend(new_action.chunks)
+
+                    if move_to:
+                        if existing_action.move_path and existing_action.move_path != move_to:
+                            raise DiffError(f"Conflicting move targets for file: {path}")
+                        existing_action.move_path = move_to
+                    fuzz_accumulator += fuzz
+                else:
+                    action, index, fuzz = self._parse_update_file_sections(
+                        lines, index, file_content
+                    )
+                    action.path = path
+                    action.move_path = move_to
+                    patch.actions[path] = action
+                    fuzz_accumulator += fuzz
+                continue
+
+            elif norm_line.startswith("*** Delete File: "):
+                path = norm_line[len("*** Delete File: ") :].strip()
+                index += 1
+                if not path:
+                    raise DiffError("Delete File action missing path.")
+                existing_action = patch.actions.get(path)
+                if existing_action:
+                    if existing_action.type == ActionType.DELETE:
+                        self.io.tool_warning(f"Duplicate delete action for file: {path} ignored.")
+                        continue
+                    else:
+                        raise DiffError(f"Conflicting actions for file: {path}")
+                if path not in current_files:
+                    raise DiffError(
+                        f"Delete File Error - file not found: {path}"
+                    )
+
+                patch.actions[path] = PatchAction(type=ActionType.DELETE, path=path)
+                continue
+
+            elif norm_line.startswith("*** Add File: "):
+                path = norm_line[len("*** Add File: ") :].strip()
+                index += 1
+                if not path:
+                    raise DiffError("Add File action missing path.")
+                if path in patch.actions:
+                    raise DiffError(f"Duplicate action for file: {path}")
+                # Note: We only have needed files, a full check requires FS access.
+
+                action, index = self._parse_add_file_content(lines, index)
+                action.path = path
+                patch.actions[path] = action
+                continue
+
+            if not norm_line.strip():
+                index += 1
+                continue
+
+            raise DiffError(f"Unknown or misplaced line while parsing patch: {line}")
+
+
+        patch.fuzz = fuzz_accumulator
+        return patch
+
+    def _parse_update_file_sections(
+        self, lines: List[str], index: int, file_content: str
+    ) -> Tuple[PatchAction, int, int]:
+        """Parses all sections (@@, context, -, +) for a single Update File action."""
+        action = PatchAction(type=ActionType.UPDATE, path="")
+        orig_lines = file_content.splitlines()
+        current_file_index = 0
+        total_fuzz = 0
+
+        while index < len(lines):
+            norm_line = _norm(lines[index])
+            if norm_line.startswith(
+                (
+                    "*** End Patch",
+                    "*** Update File:",
+                    "*** Delete File:",
+                    "*** Add File:",
+                )
+            ):
+                break
+
+            scope_lines = []
+            while index < len(lines) and _norm(lines[index]).startswith("@@"):
+                scope_line_content = lines[index][len("@@") :].strip()
+                if scope_line_content:
+                    scope_lines.append(scope_line_content)
+                index += 1
+
+            if scope_lines:
+                found_scope = False
+                temp_index = current_file_index
+                while temp_index < len(orig_lines):
+                    match = True
+                    for i, scope in enumerate(scope_lines):
+                        if (
+                            temp_index + i >= len(orig_lines)
+                            or _norm(orig_lines[temp_index + i]).strip() != scope
+                        ):
+                            match = False
+                            break
+                    if match:
+                        current_file_index = temp_index + len(scope_lines)
+                        found_scope = True
+                        break
+                    temp_index += 1
+
+                if not found_scope:
+                    temp_index = current_file_index
+                    while temp_index < len(orig_lines):
+                        match = True
+                        for i, scope in enumerate(scope_lines):
+                            if (
+                                temp_index + i >= len(orig_lines)
+                                or _norm(orig_lines[temp_index + i]).strip() != scope.strip()
+                            ):
+                                match = False
+                                break
+                        if match:
+                            current_file_index = temp_index + len(scope_lines)
+                            found_scope = True
+                            total_fuzz += 1
+                            break
+                        temp_index += 1
+
+                if not found_scope:
+                    scope_txt = "\n".join(scope_lines)
+                    raise DiffError(f"Could not find scope context:\n{scope_txt}")
+
+            context_block, chunks_in_section, next_index, is_eof = peek_next_section(lines, index)
+
+            found_index, fuzz = find_context(orig_lines, context_block, current_file_index, is_eof)
+            total_fuzz += fuzz
+
+            if found_index == -1:
+                ctx_txt = "\n".join(context_block)
+                marker = "*** End of File" if is_eof else ""
+                raise DiffError(
+                    f"Could not find patch context {marker} starting near line"
+                    f" {current_file_index}:\n{ctx_txt}"
+                )
+
+            for chunk in chunks_in_section:
+                chunk.orig_index += found_index
+                action.chunks.append(chunk)
+
+            current_file_index = found_index + len(context_block)
+            index = next_index
+
+        return action, index, total_fuzz
+
+    def _parse_add_file_content(self, lines: List[str], index: int) -> Tuple[PatchAction, int]:
+        """Parses the content (+) lines for an Add File action."""
+        added_lines: List[str] = []
+        while index < len(lines):
+            line = lines[index]
+            norm_line = _norm(line)
+            if norm_line.startswith(
+                (
+                    "*** End Patch",
+                    "*** Update File:",
+                    "*** Delete File:",
+                    "*** Add File:",
+                )
+            ):
+                break
+
+            if not line.startswith("+"):
+                if norm_line.strip() == "":
+                    added_lines.append("")
+                else:
+                    raise DiffError(f"Invalid Add File line (missing '+'): {line}")
+            else:
+                added_lines.append(line[1:])
+
+            index += 1
+
+        action = PatchAction(type=ActionType.ADD, path="", new_content="\n".join(added_lines))
+        return action, index
+
+    def apply_edits(self, edits: List[PatchAction]):
+        """
+        Applies the parsed PatchActions to the corresponding files.
+        """
+        if not edits:
+            return
+
+
+        for _path_tuple_element, action in edits:
+            full_path = self.abs_root_path(action.path)
+            path_obj = pathlib.Path(full_path)
+
+            try:
+                if action.type == ActionType.ADD:
+                    if path_obj.exists():
+                        raise DiffError(f"ADD Error: File already exists: {action.path}")
+                    if action.new_content is None:
+                        raise DiffError(f"ADD change for {action.path} has no content")
+
+                    self.io.tool_output(f"Adding {action.path}")
+                    path_obj.parent.mkdir(parents=True, exist_ok=True)
+                    content_to_write = action.new_content
+                    if not content_to_write.endswith("\n"):
+                        content_to_write += "\n"
+                    self.io.write_text(full_path, content_to_write)
+
+                elif action.type == ActionType.DELETE:
+                    self.io.tool_output(f"Deleting {action.path}")
+                    if not path_obj.exists():
+                        self.io.tool_warning(
+                            f"DELETE Warning: File not found, skipping: {action.path}"
+                        )
+                    else:
+                        path_obj.unlink()
+
+                elif action.type == ActionType.UPDATE:
+                    if not path_obj.exists():
+                        raise DiffError(f"UPDATE Error: File does not exist: {action.path}")
+
+                    current_content = self.io.read_text(full_path)
+                    if current_content is None:
+                        raise DiffError(f"Could not read file for UPDATE: {action.path}")
+
+                    new_content = self._apply_update(current_content, action, action.path)
+
+                    target_full_path = (
+                        self.abs_root_path(action.move_path) if action.move_path else full_path
+                    )
+                    target_path_obj = pathlib.Path(target_full_path)
+
+                    if action.move_path:
+                        self.io.tool_output(
+                            f"Updating and moving {action.path} to {action.move_path}"
+                        )
+                        if target_path_obj.exists() and full_path != target_full_path:
+                            self.io.tool_warning(
+                                "UPDATE Warning: Target file for move already exists, overwriting:"
+                                f" {action.move_path}"
+                            )
+                    else:
+                        self.io.tool_output(f"Updating {action.path}")
+
+                    target_path_obj.parent.mkdir(parents=True, exist_ok=True)
+                    self.io.write_text(target_full_path, new_content)
+
+                    if action.move_path and full_path != target_full_path:
+                        path_obj.unlink()
+
+                else:
+                    raise DiffError(f"Unknown action type encountered: {action.type}")
+
+            except (DiffError, FileNotFoundError, IOError, OSError) as e:
+                raise ValueError(f"Error applying action '{action.type}' to {action.path}: {e}")
+            except Exception as e:
+                raise ValueError(
+                    f"Unexpected error applying action '{action.type}' to {action.path}: {e}"
+                )
+
+    def _apply_update(self, text: str, action: PatchAction, path: str) -> str:
+        """
+        Applies UPDATE chunks to the given text content.
+        Adapted from _get_updated_file in apply_patch.py.
+        """
+        if action.type is not ActionType.UPDATE:
+            raise DiffError("_apply_update called with non-update action")
+
+        orig_lines = text.splitlines()
+        dest_lines: List[str] = []
+        current_orig_line_idx = 0
+
+        sorted_chunks = sorted(action.chunks, key=lambda c: c.orig_index)
+
+        for chunk in sorted_chunks:
+            chunk_start_index = chunk.orig_index
+
+            if chunk_start_index < current_orig_line_idx:
+                raise DiffError(
+                    f"{path}: Overlapping or out-of-order chunk detected."
+                    f" Current index {current_orig_line_idx}, chunk starts at {chunk_start_index}."
+                )
+
+            dest_lines.extend(orig_lines[current_orig_line_idx:chunk_start_index])
+
+            num_del = len(chunk.del_lines)
+            actual_deleted_lines = orig_lines[chunk_start_index : chunk_start_index + num_del]
+
+            norm_chunk_del = [_norm(s).strip() for s in chunk.del_lines]
+            norm_actual_del = [_norm(s).strip() for s in actual_deleted_lines]
+
+            if norm_chunk_del != norm_actual_del:
+                expected_str = "\n".join(f"- {s}" for s in chunk.del_lines)
+                actual_str = "\n".join(f"  {s}" for s in actual_deleted_lines)
+                raise DiffError(
+                    f"{path}: Mismatch applying patch near line {chunk_start_index + 1}.\n"
+                    f"Expected lines to remove:\n{expected_str}\n"
+                    f"Found lines in file:\n{actual_str}"
+                )
+
+            dest_lines.extend(chunk.ins_lines)
+
+            current_orig_line_idx = chunk_start_index + num_del
+
+        dest_lines.extend(orig_lines[current_orig_line_idx:])
+
+        result = "\n".join(dest_lines)
+        if result or orig_lines:
+            result += "\n"
+        return result
