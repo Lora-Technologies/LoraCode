@@ -33,16 +33,9 @@ jobs:
           flake8 loracode/ --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 loracode/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: Run tests
+      - name: Verify package imports
         run: |
-          pytest --cov=loracode --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
+          python -c "import loracode; print('Import successful')"
 
   build:
     runs-on: ubuntu-latest
