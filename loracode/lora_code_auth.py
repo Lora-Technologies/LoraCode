@@ -1,13 +1,3 @@
-"""
-Lora Code Authentication Module
-
-Handles authentication with Lora Code API including:
-- API key authentication
-- GitHub Device Flow authentication
-- Credential storage and encryption
-- Token refresh logic
-"""
-
 import base64
 import hashlib
 import json
@@ -22,7 +12,6 @@ import requests
 
 @dataclass
 class Credentials:
-    """Stored credentials for Lora Code API access."""
     api_key: str
     jwt_token: str
     token_expires_at: str
@@ -33,17 +22,12 @@ class Credentials:
 
 @dataclass
 class AuthResult:
-    """Result of an authentication attempt."""
     success: bool
     credentials: Optional[Credentials]
     error_message: Optional[str]
 
 
 def _get_encryption_key() -> bytes:
-    """
-    Generate a machine-specific encryption key.
-    Uses a combination of machine ID and a salt for key derivation.
-    """
     machine_id = ""
     try:
         if os.name == 'nt':
@@ -71,25 +55,16 @@ def _get_encryption_key() -> bytes:
 
 
 def _xor_encrypt(data: bytes, key: bytes) -> bytes:
-    """Simple XOR encryption with key cycling."""
     return bytes(d ^ key[i % len(key)] for i, d in enumerate(data))
 
 
 def encrypt_value(value: str) -> str:
-    """
-    Encrypt a string value for secure storage.
-    Returns base64-encoded encrypted data.
-    """
     key = _get_encryption_key()
     encrypted = _xor_encrypt(value.encode('utf-8'), key)
     return base64.b64encode(encrypted).decode('ascii')
 
 
 def decrypt_value(encrypted_value: str) -> str:
-    """
-    Decrypt a base64-encoded encrypted value.
-    Returns the original string.
-    """
     key = _get_encryption_key()
     encrypted = base64.b64decode(encrypted_value.encode('ascii'))
     decrypted = _xor_encrypt(encrypted, key)
@@ -97,27 +72,11 @@ def decrypt_value(encrypted_value: str) -> str:
 
 
 class LoraCodeAuth:
-    """
-    Handles authentication with Lora Code API.
-    
-    Supports:
-    - API key authentication
-    - GitHub Device Flow authentication
-    - Secure credential storage
-    - Automatic token refresh
-    """
     
     CREDENTIALS_FILE = os.path.expanduser("~/.loracode/lora-code-credentials.json")
     DEFAULT_API_BASE = "https://api.loratech.dev"
     
     def __init__(self, api_base: str = None):
-        """
-        Initialize the auth module.
-        
-        Args:
-            api_base: Lora Code API base URL. Defaults to LORA_CODE_API_BASE env var
-                     or https://api.loratech.dev
-        """
         self.api_base = api_base or os.environ.get(
             "LORA_CODE_API_BASE", 
             self.DEFAULT_API_BASE
@@ -125,15 +84,6 @@ class LoraCodeAuth:
         self._session = requests.Session()
     
     def login_with_api_key(self, api_key: str) -> AuthResult:
-        """
-        Authenticate using an API key.
-        
-        Args:
-            api_key: The Lora Code API key (sk-xxx format)
-            
-        Returns:
-            AuthResult with credentials on success, error message on failure
-        """
         try:
             response = self._session.post(
                 f"{self.api_base}/auth/token",
@@ -200,7 +150,6 @@ class LoraCodeAuth:
             )
     
     def _fetch_user_info(self, token: str) -> dict:
-        """Fetch user information using the JWT token."""
         try:
             response = self._session.get(
                 f"{self.api_base}/v1/me",
@@ -214,12 +163,6 @@ class LoraCodeAuth:
 
     
     def save_credentials(self, credentials: Credentials) -> None:
-        """
-        Save credentials to disk with encryption.
-        
-        Args:
-            credentials: The credentials to save
-        """
         creds_path = Path(self.CREDENTIALS_FILE)
         creds_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -241,12 +184,6 @@ class LoraCodeAuth:
             json.dump(data, f, indent=2)
     
     def get_credentials(self) -> Optional[Credentials]:
-        """
-        Load credentials from disk.
-        
-        Returns:
-            Credentials if found and valid, None otherwise
-        """
         creds_path = Path(self.CREDENTIALS_FILE)
         
         if not creds_path.exists():
@@ -277,24 +214,6 @@ class LoraCodeAuth:
             return None
     
     def get_credentials_with_validation(self, auto_refresh: bool = True) -> tuple[Optional[Credentials], bool]:
-        """
-        Load credentials from disk with expiration validation.
-        
-        This method loads credentials and validates token expiration.
-        If the token is expired and auto_refresh is True, it will
-        automatically attempt to refresh the token.
-        
-        Args:
-            auto_refresh: If True, automatically refresh expired tokens.
-                         Defaults to True.
-        
-        Returns:
-            A tuple of (credentials, was_refreshed):
-            - credentials: Valid Credentials if found and valid (or refreshed), None otherwise
-            - was_refreshed: True if the token was refreshed, False otherwise
-            
-        **Validates: Requirements 8.3**
-        """
         credentials = self.get_credentials()
         
         if credentials is None:
@@ -316,28 +235,17 @@ class LoraCodeAuth:
         return None, False
     
     def delete_credentials(self) -> None:
-        """Delete stored credentials (logout)."""
         creds_path = Path(self.CREDENTIALS_FILE)
         if creds_path.exists():
             creds_path.unlink()
     
     def is_authenticated(self) -> bool:
-        """Check if valid credentials exist."""
         credentials = self.get_credentials()
         if credentials is None:
             return False
         return not self.is_token_expired(credentials)
     
     def is_token_expired(self, credentials: Credentials) -> bool:
-        """
-        Check if the JWT token has expired.
-        
-        Args:
-            credentials: The credentials to check
-            
-        Returns:
-            True if token is expired, False otherwise
-        """
         try:
             expires_at = datetime.fromisoformat(
                 credentials.token_expires_at.replace('Z', '+00:00')
@@ -353,18 +261,6 @@ class LoraCodeAuth:
         display_callback: Callable[[str, str], None] = None,
         poll_callback: Callable[[], bool] = None
     ) -> AuthResult:
-        """
-        Authenticate using GitHub Device Flow.
-        
-        Args:
-            display_callback: Function to display user_code and verification_uri
-                             Signature: (user_code: str, verification_uri: str) -> None
-            poll_callback: Function called during polling, return False to cancel
-                          Signature: () -> bool (True to continue, False to cancel)
-        
-        Returns:
-            AuthResult with credentials on success, error message on failure
-        """
         try:
             response = self._session.post(
                 f"{self.api_base}/auth/github/device",
@@ -495,15 +391,6 @@ class LoraCodeAuth:
 
     
     def refresh_token(self, credentials: Credentials = None) -> AuthResult:
-        """
-        Refresh an expired JWT token using the stored API key.
-        
-        Args:
-            credentials: Credentials to refresh. If None, loads from disk.
-            
-        Returns:
-            AuthResult with new credentials on success, error message on failure
-        """
         if credentials is None:
             credentials = self.get_credentials()
         
@@ -524,17 +411,6 @@ class LoraCodeAuth:
         return self.login_with_api_key(credentials.api_key)
     
     def get_valid_token(self) -> Optional[str]:
-        """
-        Get a valid JWT token, refreshing if necessary.
-        
-        Uses get_credentials_with_validation to automatically handle
-        token expiration and refresh.
-        
-        Returns:
-            Valid JWT token or None if authentication fails
-            
-        **Validates: Requirements 8.3**
-        """
         credentials, was_refreshed = self.get_credentials_with_validation(auto_refresh=True)
         
         if credentials is None:
@@ -543,17 +419,6 @@ class LoraCodeAuth:
         return credentials.jwt_token
     
     def ensure_authenticated(self) -> AuthResult:
-        """
-        Ensure we have valid credentials, refreshing if needed.
-        
-        Uses get_credentials_with_validation to automatically handle
-        token expiration and refresh.
-        
-        Returns:
-            AuthResult with current valid credentials or error
-            
-        **Validates: Requirements 8.3**
-        """
         credentials, was_refreshed = self.get_credentials_with_validation(auto_refresh=True)
         
         if credentials is None:

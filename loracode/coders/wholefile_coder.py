@@ -8,11 +8,8 @@ from .wholefile_prompts import WholeFilePrompts
 
 
 class WholeFileCoder(Coder):
-    """A coder that operates on entire files for code modifications."""
-
     edit_format = "whole"
     gpt_prompts = WholeFilePrompts()
-
     def render_incremental_response(self, final):
         try:
             return self.get_edits(mode="diff")
@@ -72,7 +69,6 @@ class WholeFileCoder(Coder):
                         fname = chat_files[0]
                         fname_source = "chat"
                     else:
-                        # TODO: sense which file it is by diff size
                         raise ValueError(
                             f"No filename provided before {self.fence[0]} in file listing"
                         )

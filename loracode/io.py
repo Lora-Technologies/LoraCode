@@ -75,7 +75,6 @@ LORACODE_BANNER_TINY = f"{_C_LIGHT}LORA CODE{_C_RESET} {_C_DARK}·{_C_RESET} {_C
 
 
 def ensure_hash_prefix(color):
-    """Ensure hex color values have a # prefix."""
     if not color:
         return color
     if isinstance(color, str) and color.strip() and not color.startswith("#"):
@@ -85,8 +84,6 @@ def ensure_hash_prefix(color):
 
 
 def restore_multiline(func):
-    """Decorator to restore multiline mode after function execution"""
-
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         orig_multiline = self.multiline_mode
@@ -102,9 +99,6 @@ def restore_multiline(func):
 
 
 class CommandCompletionException(Exception):
-    """Raised when a command should use the normal autocompleter instead of
-    command-specific completion."""
-
     pass
 
 
@@ -338,8 +332,6 @@ class InputOutput:
             self.notifications_command = self.get_default_notification_command()
         else:
             self.notifications_command = notifications_command
-        
-        # Initialize auto-approve manager
         self.auto_approve_manager = auto_approve_manager or AutoApproveManager()
 
         no_color = os.environ.get("NO_COLOR")
@@ -459,7 +451,6 @@ class InputOutput:
         self._validate_color_settings()
 
     def _validate_color_settings(self):
-        """Validate configured color strings and reset invalid ones."""
         color_attributes = [
             "user_input_color",
             "tool_output_color",
@@ -484,7 +475,6 @@ class InputOutput:
                     setattr(self, attr_name, None)
 
     def _get_style(self):
-        """Build prompt_toolkit style with modern dark theme colors."""
         style_dict = {}
         if not self.pretty:
             return Style.from_dict(style_dict)
@@ -568,14 +558,6 @@ class InputOutput:
             return
 
     def write_text(self, filename, content, max_retries=5, initial_delay=0.1):
-        """
-        Writes content to a file, retrying with progressive backoff if the file is locked.
-
-        :param filename: Path to the file to write.
-        :param content: Content to write to the file.
-        :param max_retries: Maximum number of retries if a file lock is encountered.
-        :param initial_delay: Initial delay (in seconds) before the first retry.
-        """
         if self.dry_run:
             return
 
@@ -599,7 +581,6 @@ class InputOutput:
                 raise
 
     def rule(self):
-        """Draw a modern minimal separator line."""
         if self.pretty:
             self.console.print("", style="")
             self.console.rule(style="#2A2A2A", characters="─")
@@ -607,7 +588,6 @@ class InputOutput:
             print()
 
     def show_banner(self, version=None):
-        """Display the LoraCode startup banner with modern styling."""
         if not self.pretty:
             if version:
                 print(f"LoraCode v{version}")
@@ -659,7 +639,6 @@ class InputOutput:
                 print(f"  v{version}")
 
     def show_user_info(self, user_info):
-        """Display user account information with modern styling."""
         if not user_info:
             return
         
@@ -800,7 +779,6 @@ class InputOutput:
         )
 
         def suspend_to_bg(event):
-            """Suspend currently running application."""
             event.app.suspend_to_background()
 
         kb = KeyBindings()
@@ -1011,7 +989,6 @@ class InputOutput:
         self.append_chat_history(hist)
 
     def offer_url(self, url, prompt="Open URL for more info?", allow_never=True):
-        """Offer to open a URL in the browser, returns True if opened."""
         if url in self.never_prompts:
             return False
         if self.confirm_ask(prompt, subject=url, allow_never=allow_never):
@@ -1030,15 +1007,12 @@ class InputOutput:
         allow_never=False,
         category=None,
     ):
-        # Default category to OTHER if not specified
         if category is None:
             category = ApprovalCategory.OTHER
         
-        # Check auto-approve rules first (unless explicit_yes_required)
         if self.auto_approve_manager and not explicit_yes_required:
             should_auto, decision = self.auto_approve_manager.should_auto_decide(category)
             if should_auto:
-                # Record the auto-decision
                 self.auto_approve_manager.record_decision(
                     category=category,
                     subject=subject or "",
@@ -1046,7 +1020,6 @@ class InputOutput:
                     result=decision,
                     auto_decided=True
                 )
-                # Show feedback to user
                 if decision:
                     self._show_auto_approved(question, subject)
                 else:
@@ -1170,7 +1143,6 @@ class InputOutput:
         hist = f"{question.strip()} {res}"
         self.append_chat_history(hist, linebreak=True, blockquote=True)
         
-        # Record user decision in auto-approve history
         if self.auto_approve_manager:
             self.auto_approve_manager.record_decision(
                 category=category,
@@ -1183,20 +1155,16 @@ class InputOutput:
         return is_yes
 
     def _show_auto_approved(self, question, subject=None):
-        """Display auto-approved message to the user."""
         if subject:
             self.tool_output(f"[auto-approved] {subject}")
         self.tool_output(f"[auto-approved] {question.strip()}")
-        # Log to chat history
         hist = f"[auto-approved] {question.strip()}"
         self.append_chat_history(hist, linebreak=True, blockquote=True)
 
     def _show_auto_rejected(self, question, subject=None):
-        """Display auto-rejected message to the user."""
         if subject:
             self.tool_output(f"[auto-rejected] {subject}")
         self.tool_output(f"[auto-rejected] {question.strip()}")
-        # Log to chat history
         hist = f"[auto-rejected] {question.strip()}"
         self.append_chat_history(hist, linebreak=True, blockquote=True)
 
@@ -1238,7 +1206,6 @@ class InputOutput:
         return res
 
     def _tool_message(self, message="", strip=True, color=None, prefix=None):
-        """Display a tool message with optional prefix icon."""
         if message.strip():
             if "\n" in message:
                 for line in message.splitlines():
@@ -1266,16 +1233,13 @@ class InputOutput:
             self.console.print(display_msg, **style)
 
     def tool_error(self, message="", strip=True):
-        """Display an error message with modern styling."""
         self.num_error_outputs += 1
         self._tool_message(message, strip, self.tool_error_color, prefix="x")
 
     def tool_warning(self, message="", strip=True):
-        """Display a warning message with modern styling."""
         self._tool_message(message, strip, self.tool_warning_color, prefix="!")
 
     def tool_output(self, *messages, log_only=False, bold=False):
-        """Display tool output with modern styling."""
         if messages:
             hist = " ".join(messages)
             hist = f"{hist.strip()}"
@@ -1296,17 +1260,14 @@ class InputOutput:
         self.console.print(*messages, style=style)
 
     def tool_success(self, message="", strip=True):
-        """Display a success message with modern styling."""
         success_color = self.THEME_COLORS["dark"]["success"]
         self._tool_message(message, strip, success_color, prefix="+")
 
     def tool_info(self, message="", strip=True):
-        """Display an info message with modern styling."""
         info_color = self.THEME_COLORS["dark"]["info"]
         self._tool_message(message, strip, info_color, prefix="i")
 
     def agent_status(self, message="", action="thinking"):
-        """Display agent status with appropriate icon."""
         icons = {
             "thinking": "*",
             "analyzing": "o", 
@@ -1323,11 +1284,9 @@ class InputOutput:
         self._tool_message(message, strip=True, color=color, prefix=icon)
 
     def agent_thinking(self, message="Thinking..."):
-        """Display thinking indicator."""
         self.agent_status(message, action="thinking")
 
     def agent_done(self, message="", success=True):
-        """Display agent completion status."""
         if success:
             self.tool_success(message)
         else:
@@ -1362,18 +1321,15 @@ class InputOutput:
         self.console.print(show_resp)
 
     def set_placeholder(self, placeholder):
-        """Set a one-time placeholder text for the next input prompt."""
         self.placeholder = placeholder
 
     def print(self, message=""):
         print(message)
 
     def llm_started(self):
-        """Mark that the LLM has started processing, so we should ring the bell on next input"""
         self.bell_on_next_input = True
 
     def get_default_notification_command(self):
-        """Return a default notification command based on the operating system."""
         import platform
 
         system = platform.system()
@@ -1403,7 +1359,6 @@ class InputOutput:
         return None
 
     def ring_bell(self):
-        """Ring the terminal bell if needed and clear the flag"""
         if self.bell_on_next_input and self.notifications:
             if self.notifications_command:
                 try:
@@ -1420,7 +1375,6 @@ class InputOutput:
             self.bell_on_next_input = False
 
     def toggle_multiline_mode(self):
-        """Toggle between normal and multiline input modes"""
         self.multiline_mode = not self.multiline_mode
         if self.multiline_mode:
             self.tool_output(t("multiline.enabled"))

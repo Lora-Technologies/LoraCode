@@ -173,10 +173,4 @@ def is_important(file_path):
 
 
 def filter_important_files(file_paths):
-    """
-    Filter a list of file paths to return only those that are commonly important in codebases.
-
-    :param file_paths: List of file paths to check
-    :return: List of file paths that match important file patterns
-    """
     return list(filter(is_important, file_paths))

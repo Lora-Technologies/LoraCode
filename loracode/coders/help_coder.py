@@ -4,8 +4,6 @@ from .help_prompts import HelpPrompts
 
 
 class HelpCoder(Coder):
-    """Interactive help and documentation about LoraCode."""
-
     edit_format = "help"
     gpt_prompts = HelpPrompts()
 

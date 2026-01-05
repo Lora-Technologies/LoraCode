@@ -50,12 +50,10 @@ BANNER_COMPACT = f"""
 
 
 def clear_screen():
-    """Clear the terminal screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
 def get_terminal_width():
-    """Get terminal width."""
     try:
         return os.get_terminal_size().columns
     except:
@@ -63,7 +61,6 @@ def get_terminal_width():
 
 
 def show_banner():
-    """Display the startup banner."""
     width = get_terminal_width()
     if width >= 55:
         print(BANNER)
@@ -72,12 +69,10 @@ def show_banner():
 
 
 def spinner_frames():
-    """Modern spinner animation frames."""
     return ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
 def show_status(message, status="info"):
-    """Show a status message with icon."""
     icons = {
         "info": f"{CYAN}*{RESET}",
         "success": f"{GREEN}+{RESET}",
@@ -96,10 +91,6 @@ _LOCKOUT_DURATION = 30
 
 
 def _check_login_rate_limit():
-    """
-    Check if user is rate limited due to failed login attempts.
-    Returns: (is_locked, remaining_seconds)
-    """
     global _failed_login_attempts, _last_failed_attempt_time
     
     if _failed_login_attempts >= _MAX_FAILED_ATTEMPTS:
@@ -116,24 +107,18 @@ def _check_login_rate_limit():
 
 
 def _record_failed_login():
-    """Record a failed login attempt."""
     global _failed_login_attempts, _last_failed_attempt_time
     _failed_login_attempts += 1
     _last_failed_attempt_time = time.time()
 
 
 def _reset_login_attempts():
-    """Reset failed login attempts counter on successful login."""
     global _failed_login_attempts, _last_failed_attempt_time
     _failed_login_attempts = 0
     _last_failed_attempt_time = 0
 
 
 def check_authentication():
-    """
-    Check if user is authenticated.
-    Returns: (is_authenticated, credentials, error_message)
-    """
     try:
         from loracode.lora_code_auth import LoraCodeAuth
         
@@ -165,10 +150,6 @@ def check_authentication():
 
 
 def prompt_for_login():
-    """
-    Prompt user for login with API key or GitHub.
-    Returns: True if login successful, False otherwise.
-    """
     is_locked, remaining = _check_login_rate_limit()
     if is_locked:
         print()
@@ -203,7 +184,6 @@ def prompt_for_login():
 
 
 def login_with_api_key():
-    """Login with API key."""
     from loracode.lora_code_auth import LoraCodeAuth
     
     is_locked, remaining = _check_login_rate_limit()
@@ -272,7 +252,6 @@ def login_with_github():
     polling_active = True
     
     def display_code(user_code, verification_uri):
-        """Display the user code and verification URL."""
         print(f"  {WHITE}Tarayicinizda asagidaki adresi acin:{RESET}")
         print()
         print(f"  {ORANGE}>{RESET} {CYAN}{verification_uri}{RESET}")
@@ -292,7 +271,6 @@ def login_with_github():
         print(f"  {DIM}Yetkilendirme bekleniyor... (Ctrl+C ile iptal){RESET}")
     
     def poll_callback():
-        """Called during polling - return False to cancel."""
         return polling_active
     
     try:
@@ -326,12 +304,6 @@ def login_with_github():
 
 
 def show_user_info(credentials):
-    """
-    Display authenticated user info with stats from /v1/me.
-    
-    Returns:
-        True if user info was successfully fetched, False otherwise
-    """
     if not credentials:
         return False
         
@@ -398,15 +370,6 @@ def show_user_info(credentials):
 
 
 def main():
-    """
-    Entry point for python -m loracode.
-    
-    Flow:
-    1. If arguments provided -> go directly to main
-    2. Check authentication
-    3. If authenticated -> verify with /v1/me -> start CLI
-    4. If not authenticated or /v1/me fails -> prompt for login -> start CLI
-    """
     if len(sys.argv) > 1:
         from loracode.main import main as loracode_main
         return loracode_main()
@@ -474,7 +437,6 @@ def main():
 
 
 def handle_login_failure():
-    """Handle login failure - ask if user wants to continue without login."""
     print()
     try:
         choice = input(f"  {YELLOW}?{RESET} Giris yapmadan devam etmek ister misiniz? [e/H]: ").strip().lower()

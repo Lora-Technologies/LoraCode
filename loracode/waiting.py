@@ -1,29 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
-"""
-Modern spinner and status indicators for LoraCode.
-
-Includes:
-- Spinner: Animated loading indicator
-- ThinkingIndicator: Shows AI thinking/reasoning status
-- AgentSpinner: Enhanced spinner for agent operations
-
-Use it like:
-
-    from loracode.waiting import WaitingSpinner, ThinkingIndicator
-
-    # Basic spinner
-    spinner = WaitingSpinner("Waiting for LLM")
-    spinner.start()
-    ...  # long task
-    spinner.stop()
-    
-    # Thinking indicator
-    with ThinkingIndicator("Analyzing code..."):
-        ...  # AI thinking
-"""
-
 import sys
 import threading
 import time
@@ -34,7 +10,6 @@ from rich.console import Console
 
 
 class SpinnerStyle(Enum):
-    """Different spinner animation styles."""
     DOTS = "dots"
     PULSE = "pulse"
     STAR = "star"
@@ -80,12 +55,6 @@ AGENT_ICONS = {
 
 
 class Spinner:
-    """
-    Modern minimal spinner with a clean, professional aesthetic.
-    
-    Uses configurable animation styles that are elegant and unobtrusive.
-    """
-
     last_frame_idx = 0
 
     def __init__(
@@ -187,12 +156,6 @@ class Spinner:
 
 
 class ThinkingIndicator:
-    """
-    Shows AI thinking/reasoning status with animated indicator.
-    
-    Displays a pulsing animation to show the AI is processing.
-    """
-
     def __init__(
         self, 
         text: str = "Thinking...",
@@ -289,12 +252,6 @@ class ThinkingIndicator:
 
 
 class AgentSpinner:
-    """
-    Enhanced spinner for agent operations with action icons.
-    
-    Shows different icons based on the current action type.
-    """
-
     def __init__(
         self,
         text: str = "Working...",
@@ -329,7 +286,6 @@ class AgentSpinner:
         return AGENT_ICONS.get(self.action, AGENT_ICONS["thinking"])
 
     def set_action(self, action: str, text: str = None):
-        """Change the current action and optionally the text."""
         self.action = action
         if text:
             self.text = text
@@ -387,8 +343,6 @@ class AgentSpinner:
 
 
 class WaitingSpinner:
-    """Background spinner that can be started/stopped safely."""
-
     def __init__(
         self, 
         text: str = "Waiting for LLM", 
@@ -408,19 +362,16 @@ class WaitingSpinner:
         self.spinner.end()
 
     def update_text(self, text: str):
-        """Update the spinner text."""
         self._text = text
         self.spinner.text = text
 
     def start(self):
-        """Start the spinner in a background thread."""
         if not self._thread.is_alive():
             self._stop_event.clear()
             self._thread = threading.Thread(target=self._spin, daemon=True)
             self._thread.start()
 
     def stop(self):
-        """Request the spinner to stop and wait briefly for the thread to exit."""
         self._stop_event.set()
         if self._thread.is_alive():
             self._thread.join(timeout=self.delay * 2)
@@ -435,12 +386,6 @@ class WaitingSpinner:
 
 
 class StatusLine:
-    """
-    Single-line status display for agent operations.
-    
-    Shows: icon + action + elapsed time
-    """
-    
     def __init__(self):
         self.is_tty = sys.stdout.isatty()
         self.console = Console()
@@ -456,7 +401,6 @@ class StatusLine:
             return False
 
     def show(self, text: str, icon: str = "+", color: str = "#E8912D"):
-        """Show a status message."""
         if not self.is_tty:
             print(f"{icon} {text}")
             return
@@ -477,7 +421,6 @@ class StatusLine:
         self.last_len = display_len
 
     def clear(self):
-        """Clear the status line."""
         if self.is_tty:
             sys.stdout.write("\r" + " " * (self.last_len + 10) + "\r")
             sys.stdout.flush()
@@ -485,7 +428,6 @@ class StatusLine:
         self.start_time = None
 
     def done(self, text: str, success: bool = True):
-        """Show completion message and move to new line."""
         icon = "+" if success else "x"
         color = "#4EC9B0" if success else "#F44747"
         self.show(text, icon, color)
@@ -496,7 +438,6 @@ class StatusLine:
 
 
 def main():
-    """Demo of spinner styles."""
     print("Testing spinners...\n")
     
     print("Basic spinner:")

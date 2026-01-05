@@ -1,12 +1,6 @@
-"""
-Lora Code exception handling module.
-
-This module provides exception handling for Lora Code API errors.
-The litellm dependency has been removed.
-"""
 from dataclasses import dataclass
 
-from loracode.dump import dump  # noqa: F401
+from loracode.dump import dump
 
 
 @dataclass
@@ -58,12 +52,6 @@ EXCEPTIONS = [
 
 
 class LiteLLMExceptions:
-    """
-    Exception handler for Lora Code API errors.
-    
-    This class provides compatibility with the previous litellm-based
-    exception handling while using Lora Code's exception classes.
-    """
     exceptions = dict()
     exception_info = {exi.name: exi for exi in EXCEPTIONS}
 
@@ -92,11 +80,9 @@ class LiteLLMExceptions:
                 self.exceptions[ex_class] = self.exception_info[name]
 
     def exceptions_tuple(self):
-        """Return a tuple of all exception classes."""
         return tuple(self.exceptions.keys())
 
     def get_ex_info(self, ex):
-        """Return the ExInfo for a given exception instance."""
         from loracode.llm import litellm
 
         if ex.__class__ is litellm.APIConnectionError:

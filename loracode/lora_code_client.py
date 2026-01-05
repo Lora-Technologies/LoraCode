@@ -1,15 +1,3 @@
-"""
-Lora Code API Client Module
-
-Handles all communication with Lora Code API including:
-- HTTP session management
-- Authorization header injection
-- URL validation
-- Model listing and validation
-- Chat completions with streaming support
-- Rate limiting and error handling
-"""
-
 import json
 import os
 import re
@@ -25,7 +13,6 @@ from loracode.lora_code_auth import LoraCodeAuth, Credentials
 
 @dataclass
 class ModelCapabilities:
-    """Capabilities of a Lora Code model."""
     chat: bool = True
     embedding: bool = False
     image_generation: bool = False
@@ -37,7 +24,6 @@ class ModelCapabilities:
 
 @dataclass
 class ModelInfo:
-    """Information about a Lora Code model."""
     id: str
     name: str
     description: str
@@ -51,39 +37,32 @@ class ModelInfo:
     
     @property
     def supports_thinking(self) -> bool:
-        """Check if model supports thinking/reasoning."""
         return self.capabilities.thinking if self.capabilities else False
 
 
 class LoraCodeClientError(Exception):
-    """Base exception for Lora Code client errors."""
     pass
 
 
 class URLValidationError(LoraCodeClientError):
-    """Raised when URL validation fails."""
     pass
 
 
 class AuthenticationError(LoraCodeClientError):
-    """Raised when authentication fails."""
     pass
 
 
 class ModelNotFoundError(LoraCodeClientError):
-    """Raised when a requested model is not found."""
     pass
 
 
 class RateLimitError(LoraCodeClientError):
-    """Raised when rate limit is exceeded."""
     def __init__(self, message: str, retry_after: Optional[float] = None):
         super().__init__(message)
         self.retry_after = retry_after
 
 
 class APIError(LoraCodeClientError):
-    """Raised when API returns an error response."""
     def __init__(self, message: str, status_code: int, error_details: Optional[dict] = None):
         super().__init__(message)
         self.status_code = status_code
@@ -92,7 +71,6 @@ class APIError(LoraCodeClientError):
 
 @dataclass
 class ChatMessage:
-    """A chat message."""
     role: str
     content: str
     
@@ -102,12 +80,10 @@ class ChatMessage:
 
 @dataclass
 class ThinkingConfig:
-    """Configuration for thinking/extended reasoning mode."""
     enabled: bool = False
     budget: int = 10000
     
     def to_dict(self) -> dict:
-        """Convert to API request format."""
         if not self.enabled:
             return {}
         return {
@@ -120,7 +96,6 @@ class ThinkingConfig:
 
 @dataclass
 class RateLimitInfo:
-    """Rate limit information from API response headers."""
     limit: Optional[int] = None
     remaining: Optional[int] = None
     reset: Optional[float] = None
@@ -128,7 +103,6 @@ class RateLimitInfo:
     
     @classmethod
     def from_headers(cls, headers: dict) -> "RateLimitInfo":
-        """Parse rate limit info from response headers."""
         def parse_int(key: str) -> Optional[int]:
             value = headers.get(key)
             if value is not None:
@@ -156,18 +130,6 @@ class RateLimitInfo:
 
 
 def validate_api_base_url(url: str) -> bool:
-    """
-    Validate that the API base URL is a valid HTTPS URL.
-    
-    Args:
-        url: The URL to validate
-        
-    Returns:
-        True if valid
-        
-    Raises:
-        URLValidationError: If the URL is invalid or not HTTPS
-    """
     if not url:
         raise URLValidationError("API base URL cannot be empty")
     
@@ -200,16 +162,7 @@ def validate_api_base_url(url: str) -> bool:
         raise URLValidationError(f"Invalid API base URL: {str(e)}")
 
 
-class LoraCodeClient:
-    """
-    Client for Lora Code API.
-    
-    Handles HTTP communication with Lora Code API including:
-    - Session management
-    - Authorization header injection
-    - Model listing and validation
-    """
-    
+class LoraCodeClient:    
     DEFAULT_API_BASE = "https://api.loratech.dev"
     
     def __init__(
@@ -218,16 +171,6 @@ class LoraCodeClient:
         api_key: str = None,
         auth: LoraCodeAuth = None
     ):
-        """
-        Initialize the Lora Code client.
-        
-        Args:
-            api_base: Lora Code API base URL. Defaults to LORA_CODE_API_BASE env var
-                     or https://api.loratech.dev
-            api_key: API key for authentication. Defaults to LORA_CODE_API_KEY env var
-            auth: LoraCodeAuth instance for credential management. If not provided,
-                  a new instance will be created.
-        """
         self.api_base = api_base or os.environ.get(
             "LORA_CODE_API_BASE",
             self.DEFAULT_API_BASE
@@ -251,15 +194,6 @@ class LoraCodeClient:
         self._models_cache: Optional[List[ModelInfo]] = None
     
     def _get_auth_header(self) -> dict:
-        """
-        Get the authorization header for API requests.
-        
-        Returns:
-            Dict with Authorization header
-            
-        Raises:
-            AuthenticationError: If no valid credentials are available
-        """
         import os
         debug = os.environ.get("LORACODE_DEBUG")
         
@@ -302,22 +236,6 @@ class LoraCodeClient:
         authenticated: bool = True,
         **kwargs
     ) -> requests.Response:
-        """
-        Make an HTTP request to the Lora Code API.
-        
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            endpoint: API endpoint (e.g., "/v1/models")
-            authenticated: Whether to include auth header
-            **kwargs: Additional arguments to pass to requests
-            
-        Returns:
-            Response object
-            
-        Raises:
-            AuthenticationError: If authentication fails
-            LoraCodeClientError: If the request fails
-        """
         url = f"{self.api_base}{endpoint}"
         
         headers = kwargs.pop("headers", {})
@@ -354,18 +272,6 @@ class LoraCodeClient:
             raise LoraCodeClientError(f"Request failed: {str(e)}")
     
     def list_models(self, force_refresh: bool = False) -> List[ModelInfo]:
-        """
-        List available models from Lora Code API.
-        
-        Args:
-            force_refresh: If True, bypass cache and fetch fresh data
-            
-        Returns:
-            List of ModelInfo objects
-            
-        Raises:
-            LoraCodeClientError: If the request fails
-        """
         if self._models_cache is not None and not force_refresh:
             return self._models_cache
         
@@ -376,7 +282,6 @@ class LoraCodeClient:
         models = []
         
         for model_data in data.get("data", []):
-            # Parse capabilities
             caps_data = model_data.get("capabilities", {})
             capabilities = ModelCapabilities(
                 chat=caps_data.get("chat", True),
@@ -402,18 +307,6 @@ class LoraCodeClient:
         return models
     
     def validate_model(self, model_id: str) -> ModelInfo:
-        """
-        Validate that a model exists and return its info.
-        
-        Args:
-            model_id: The model ID to validate
-            
-        Returns:
-            ModelInfo for the validated model
-            
-        Raises:
-            ModelNotFoundError: If the model doesn't exist
-        """
         models = self.list_models()
         
         for model in models:
@@ -426,22 +319,10 @@ class LoraCodeClient:
         )
     
     def get_model_ids(self) -> List[str]:
-        """
-        Get list of available model IDs.
-        
-        Returns:
-            List of model ID strings
-        """
         models = self.list_models()
         return [m.id for m in models]
     
     def is_authenticated(self) -> bool:
-        """
-        Check if the client has valid authentication.
-        
-        Returns:
-            True if authenticated, False otherwise
-        """
         try:
             self._get_auth_header()
             return True
@@ -449,45 +330,17 @@ class LoraCodeClient:
             return False
     
     def get_user_info(self) -> dict:
-        """
-        Get current user information from Lora Code API.
-        
-        Returns:
-            Dict with user information
-            
-        Raises:
-            LoraCodeClientError: If the request fails
-        """
         response = self._make_request("GET", "/v1/me")
         response.raise_for_status()
         return response.json()
     
     def clear_cache(self) -> None:
-        """Clear the models cache."""
         self._models_cache = None
     
     def _parse_rate_limit_headers(self, response: requests.Response) -> RateLimitInfo:
-        """
-        Parse rate limit information from response headers.
-        
-        Args:
-            response: HTTP response object
-            
-        Returns:
-            RateLimitInfo with parsed rate limit data
-        """
         return RateLimitInfo.from_headers(response.headers)
     
     def _handle_rate_limit(self, response: requests.Response) -> None:
-        """
-        Handle rate limit response (429 status).
-        
-        Args:
-            response: HTTP response with 429 status
-            
-        Raises:
-            RateLimitError: With retry_after information
-        """
         rate_info = self._parse_rate_limit_headers(response)
         retry_after = rate_info.retry_after
         
@@ -504,15 +357,6 @@ class LoraCodeClient:
         )
     
     def _parse_api_error(self, response: requests.Response) -> APIError:
-        """
-        Parse error details from API response.
-        
-        Args:
-            response: HTTP response with error status
-            
-        Returns:
-            APIError with parsed details
-        """
         try:
             data = response.json()
             error_msg = data.get("error", {}).get("message", response.text)
@@ -528,15 +372,6 @@ class LoraCodeClient:
         )
     
     def _parse_sse_line(self, line: str) -> Optional[dict]:
-        """
-        Parse a Server-Sent Events line.
-        
-        Args:
-            line: A single line from SSE stream
-            
-        Returns:
-            Parsed JSON data or None if not a data line
-        """
         line = line.strip()
         
         if not line:
@@ -560,18 +395,6 @@ class LoraCodeClient:
         response: requests.Response,
         include_thinking: bool = False
     ) -> Iterator[Union[str, Dict[str, str]]]:
-        """
-        Stream and parse SSE response chunks.
-        
-        Args:
-            response: HTTP response with streaming content
-            include_thinking: If True, yield thinking content separately
-            
-        Yields:
-            If include_thinking=False: Content strings from each chunk
-            If include_thinking=True: Dicts with 'type' ('thinking' or 'content') and 'text' keys
-        """
-        # Force UTF-8 encoding for response
         response.encoding = 'utf-8'
         
         for line in response.iter_lines():
@@ -609,29 +432,6 @@ class LoraCodeClient:
         thinking: Optional[Union[ThinkingConfig, Dict[str, Any]]] = None,
         **kwargs
     ) -> Union[Iterator[Union[str, Dict[str, str]]], Dict[str, Any]]:
-        """
-        Send a chat completion request to Lora Code API.
-        
-        Args:
-            messages: List of chat messages (dicts or ChatMessage objects)
-            model: Model ID to use
-            stream: Whether to stream the response (default: True)
-            temperature: Sampling temperature (optional)
-            max_tokens: Maximum tokens to generate (optional)
-            thinking: Thinking/extended reasoning configuration (optional)
-                     Can be ThinkingConfig object or dict with 'enabled' and 'budget' keys
-            **kwargs: Additional parameters to pass to the API
-            
-        Returns:
-            If stream=True: Iterator yielding content strings (or dicts if thinking enabled)
-            If stream=False: Dict with full response including 'thinking' field if enabled
-            
-        Raises:
-            AuthenticationError: If not authenticated
-            RateLimitError: If rate limited
-            APIError: If API returns an error
-            LoraCodeClientError: If request fails
-        """
         formatted_messages = []
         for msg in messages:
             if isinstance(msg, ChatMessage):
@@ -693,23 +493,6 @@ class LoraCodeClient:
         max_retries: int = 3,
         **kwargs
     ) -> Union[Iterator[str], Dict[str, Any]]:
-        """
-        Send a chat completion request with automatic retry on rate limits.
-        
-        Args:
-            messages: List of chat messages
-            model: Model ID to use
-            stream: Whether to stream the response
-            max_retries: Maximum number of retries on rate limit
-            **kwargs: Additional parameters
-            
-        Returns:
-            Same as chat_completion
-            
-        Raises:
-            RateLimitError: If rate limited after all retries
-            Other exceptions from chat_completion
-        """
         last_error = None
         
         for attempt in range(max_retries + 1):

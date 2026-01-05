@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loracode"
-version = "0.1.1"
+version = "0.1.2"
 description = "AI-powered coding assistant in your terminal"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -109,7 +109,7 @@ Issues = "https://github.com/Lora-Technologies/loracode/issues"
 Changelog = "https://github.com/Lora-Technologies/loracode/releases"
 
 [tool.setuptools]
-packages = ["loracode", "loracode.resources"]
+packages = ["loracode", "loracode.coders", "loracode.resources", "loracode.locales"]
 include-package-data = true
 
 [tool.setuptools.package-data]

@@ -1,8 +1,3 @@
-"""
-Internationalization (i18n) module for LoraCode.
-Provides multi-language support for Turkish and English.
-"""
-
 import json
 import locale
 import os
@@ -30,17 +25,6 @@ _translator: Optional["Translator"] = None
 
 
 def detect_system_language() -> str:
-    """
-    Detect the system's preferred language.
-    
-    Checks in order:
-    1. LORACODE_LANG environment variable
-    2. LANG environment variable
-    3. System locale
-    
-    Returns:
-        Language code ('en', 'tr', etc.) or DEFAULT_LANGUAGE if not detected
-    """
     loracode_lang = os.environ.get("LORACODE_LANG", "").lower().strip()
     if loracode_lang and loracode_lang in SUPPORTED_LANGUAGES:
         return loracode_lang
@@ -80,8 +64,6 @@ def detect_system_language() -> str:
 
 
 class Translator:
-    """Handles translation of messages to different languages."""
-
     def __init__(self, language: str = DEFAULT_LANGUAGE):
         self.language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
         self.translations: Dict[str, str] = {}
@@ -89,11 +71,9 @@ class Translator:
         self._load_translations()
 
     def _get_locale_path(self) -> Path:
-        """Get the path to the locales directory."""
         return Path(__file__).parent / "locales"
 
     def _load_translations(self) -> None:
-        """Load translation files for current and fallback language."""
         locale_path = self._get_locale_path()
 
         fallback_file = locale_path / f"{DEFAULT_LANGUAGE}.json"
@@ -116,15 +96,6 @@ class Translator:
             self.translations = self.fallback_translations
 
     def set_language(self, language: str) -> bool:
-        """
-        Change the current language.
-        
-        Args:
-            language: Language code (e.g., 'en', 'tr')
-            
-        Returns:
-            True if language was changed successfully, False otherwise
-        """
         if language not in SUPPORTED_LANGUAGES:
             return False
         
@@ -133,16 +104,6 @@ class Translator:
         return True
 
     def get(self, key: str, **kwargs) -> str:
-        """
-        Get a translated message.
-        
-        Args:
-            key: The translation key
-            **kwargs: Format arguments for the message
-            
-        Returns:
-            Translated and formatted message, or the key if not found
-        """
         message = self.translations.get(key)
         
         if message is None:
@@ -160,12 +121,10 @@ class Translator:
         return message
 
     def __call__(self, key: str, **kwargs) -> str:
-        """Shortcut for get() method."""
         return self.get(key, **kwargs)
 
 
 def get_translator() -> Translator:
-    """Get the global translator instance."""
     global _translator
     if _translator is None:
         lang = detect_system_language()
@@ -174,65 +133,23 @@ def get_translator() -> Translator:
 
 
 def set_language(language: str) -> bool:
-    """
-    Set the global language.
-    
-    Args:
-        language: Language code (e.g., 'en', 'tr')
-        
-    Returns:
-        True if language was set successfully
-    """
     translator = get_translator()
     return translator.set_language(language)
 
 
 def t(key: str, **kwargs) -> str:
-    """
-    Translate a message key.
-    
-    This is the main function to use for translations throughout the codebase.
-    
-    Args:
-        key: The translation key
-        **kwargs: Format arguments for the message
-        
-    Returns:
-        Translated message
-        
-    Example:
-        >>> t("error.file_not_found", filename="test.py")
-        "test.py: file not found error"
-    """
     return get_translator().get(key, **kwargs)
 
 
 def get_supported_languages() -> Dict[str, str]:
-    """Get dictionary of supported language codes and names."""
     return SUPPORTED_LANGUAGES.copy()
 
 
 def get_current_language() -> str:
-    """Get the current language code."""
     return get_translator().language
 
 
 def validate_translations() -> Dict[str, list]:
-    """
-    Validate translation file completeness across all supported languages.
-    
-    Compares all locale files against the English (default) locale file
-    to find missing translation keys.
-    
-    Returns:
-        Dictionary mapping language codes to lists of missing keys.
-        Empty lists indicate complete translations.
-        
-    Example:
-        >>> result = validate_translations()
-        >>> result
-        {'tr': ['new.key.1', 'new.key.2']}
-    """
     locale_path = Path(__file__).parent / "locales"
     missing_keys: Dict[str, list] = {}
     
@@ -272,23 +189,6 @@ def validate_translations() -> Dict[str, list]:
 
 
 def get_missing_keys(language: str) -> list:
-    """
-    Get missing translation keys for a specific language.
-    
-    Compares the specified language's locale file against the English
-    (default) locale file to find missing keys.
-    
-    Args:
-        language: Language code (e.g., 'tr' for Turkish)
-        
-    Returns:
-        List of missing translation keys, sorted alphabetically.
-        Empty list if language is English or all keys are present.
-        
-    Example:
-        >>> get_missing_keys('tr')
-        ['new.key.1', 'new.key.2']
-    """
     if language == DEFAULT_LANGUAGE:
         return []
     

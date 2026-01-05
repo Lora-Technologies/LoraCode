@@ -17,75 +17,7 @@ from loracode.utils import GitTemporaryDirectory
 
 
 class RelativeIndenter:
-    """Rewrites text files to have relative indentation, which involves
-    reformatting the leading white space on lines.  This format makes
-    it easier to search and apply edits to pairs of code blocks which
-    may differ significantly in their overall level of indentation.
-
-    It removes leading white space which is shared with the preceding
-    line.
-
-    Original:
-    ```
-            Foo # indented 8
-                Bar # indented 4 more than the previous line
-                Baz # same indent as the previous line
-                Fob # same indent as the previous line
-    ```
-
-    Becomes:
-    ```
-            Foo # indented 8
-        Bar # indented 4 more than the previous line
-    Baz # same indent as the previous line
-    Fob # same indent as the previous line
-    ```
-
-    If the current line is *less* indented then the previous line,
-    uses a unicode character to indicate outdenting.
-
-    Original
-    ```
-            Foo
-                Bar
-                Baz
-            Fob # indented 4 less than the previous line
-    ```
-
-    Becomes:
-    ```
-            Foo
-        Bar
-    Baz
-    ←←←←Fob # indented 4 less than the previous line
-    ```
-
-    This is a similar original to the last one, but every line has
-    been uniformly outdented:
-    ```
-    Foo
-        Bar
-        Baz
-    Fob # indented 4 less than the previous line
-    ```
-
-    It becomes this result, which is very similar to the previous
-    result.  Only the white space on the first line differs.  From the
-    word Foo onwards, it is identical to the previous result.
-    ```
-    Foo
-        Bar
-    Baz
-    ←←←←Fob # indented 4 less than the previous line
-    ```
-
-    """
-
     def __init__(self, texts):
-        """
-        Based on the texts, choose a unicode character that isn't in any of them.
-        """
-
         chars = set()
         for text in texts:
             chars.update(text)
@@ -105,10 +37,6 @@ class RelativeIndenter:
         raise ValueError("Could not find a unique marker")
 
     def make_relative(self, text):
-        """
-        Transform text to use relative indents.
-        """
-
         if self.marker in text:
             raise ValueError(f"Text already contains the outdent marker: {self.marker}")
 
@@ -137,9 +65,6 @@ class RelativeIndenter:
         return res
 
     def make_absolute(self, text):
-        """
-        Transform text from relative back to absolute indents.
-        """
         lines = text.splitlines(keepends=True)
 
         output = []
@@ -509,13 +434,6 @@ udiff_strategies = [
 
 
 def flexible_search_and_replace(texts, strategies):
-    """Try a series of search/replace methods, starting from the most
-    literal interpretation of search_text. If needed, progress to more
-    flexible methods, which can accommodate divergence between
-    search_text and original_text and yet still achieve the desired
-    edits.
-    """
-
     for strategy, preprocs in strategies:
         for preproc in preprocs:
             res = try_strategy(texts, strategy, preproc)

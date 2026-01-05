@@ -17,5 +17,5 @@ def format_settings(parser, args):
     for arg, val in sorted(vars(args).items()):
         if val:
             val = scrub_sensitive_info(args, str(val))
-        show += f"  - {arg}: {val}\n"  # noqa: E221
+        show += f"  - {arg}: {val}\n" 
     return show

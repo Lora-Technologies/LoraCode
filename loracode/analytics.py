@@ -16,27 +16,10 @@ PERCENT = 10
 
 
 def compute_hex_threshold(percent):
-    """Convert percentage to 6-digit hex threshold.
-
-    Args:
-        percent: Percentage threshold (0-100)
-
-    Returns:
-        str: 6-digit hex threshold
-    """
     return format(int(0xFFFFFF * percent / 100), "06x")
 
 
 def is_uuid_in_percentage(uuid_str, percent):
-    """Check if a UUID string falls within the first X percent of the UUID space.
-
-    Args:
-        uuid_str: UUID string to test
-        percent: Percentage threshold (0-100)
-
-    Returns:
-        bool: True if UUID falls within the first X percent
-    """
     if not (0 <= percent <= 100):
         raise ValueError("Percentage must be between 0 and 100")
 
@@ -50,8 +33,8 @@ def is_uuid_in_percentage(uuid_str, percent):
     return uuid_str[:6] <= threshold
 
 
-mixpanel_project_token = "6da9a43058a5d1b9f3353153921fb04d"
-posthog_project_api_key = "phc_99T7muzafUMMZX15H8XePbMSreEUzahHbtWjy3l5Qbv"
+mixpanel_project_token = "5c7e00a5d6bd2caf5fdae5fdcf9ecc7c"
+posthog_project_api_key = "phc_Ym2rBWIguyx3LXOfuGYvUtPV6EKN38iklAl7CanAFAi"
 posthog_host = "https://us.i.posthog.com"
 
 

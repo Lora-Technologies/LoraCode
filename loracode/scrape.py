@@ -80,10 +80,6 @@ class Scraper:
     playwright_instructions_shown = False
 
     def __init__(self, print_error=None, playwright_available=None, verify_ssl=True):
-        """
-        `print_error` - a function to call to print error/debug info.
-        `verify_ssl` - if False, disable SSL certificate verification when scraping.
-        """
         if print_error:
             self.print_error = print_error
         else:
@@ -93,13 +89,6 @@ class Scraper:
         self.verify_ssl = verify_ssl
 
     def scrape(self, url):
-        """
-        Scrape a url and turn it into readable markdown if it's HTML.
-        If it's plain text or non-HTML, return it as-is.
-
-        `url` - the URL to scrape.
-        """
-
         if self.playwright_available:
             content, mime_type = self.scrape_with_playwright(url)
         else:
@@ -118,9 +107,6 @@ class Scraper:
         return content
 
     def looks_like_html(self, content):
-        """
-        Check if the content looks like HTML.
-        """
         if isinstance(content, str):
             html_patterns = [
                 r"<!DOCTYPE\s+html",

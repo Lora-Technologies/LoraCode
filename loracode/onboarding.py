@@ -1,9 +1,3 @@
-"""
-Lora Code onboarding module.
-
-This module handles the initial setup and authentication for Lora Code API.
-All third-party provider integrations (OpenRouter, OpenAI, Anthropic, etc.) have been removed.
-"""
 import os
 
 from loracode import urls
@@ -12,12 +6,6 @@ from loracode.i18n import t
 
 
 def try_to_select_default_model():
-    """
-    Attempts to select a default model based on Lora Code authentication.
-
-    Returns:
-        The name of the selected model, or None if no suitable default is found.
-    """
     if os.environ.get("LORA_CODE_API_KEY"):
         return "lora-code-v1"
 
@@ -33,16 +21,6 @@ def try_to_select_default_model():
 
 
 def offer_lora_code_auth(io, analytics):
-    """
-    Offers Lora Code authentication flow to the user if no credentials are found.
-
-    Args:
-        io: The InputOutput object for user interaction.
-        analytics: The Analytics object for tracking events.
-
-    Returns:
-        True if authentication was successful, False otherwise.
-    """
     io.tool_output(t("auth.intro"))
     
     if io.confirm_ask(
@@ -73,18 +51,6 @@ def offer_lora_code_auth(io, analytics):
 
 
 def select_default_model(args, io, analytics):
-    """
-    Selects a default model based on Lora Code authentication.
-    Offers authentication flow if no credentials are found.
-
-    Args:
-        args: The command line arguments object.
-        io: The InputOutput object for user interaction.
-        analytics: The Analytics object for tracking events.
-
-    Returns:
-        The name of the selected model, or None if no suitable default is found.
-    """
     if args.model:
         return args.model
 
@@ -113,7 +79,6 @@ class DummyAnalytics:
 
 
 def main():
-    """Main function to test the Lora Code authentication flow."""
     print(t("onboarding.test_starting"))
 
     io = InputOutput(

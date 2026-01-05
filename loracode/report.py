@@ -35,15 +35,6 @@ def get_git_info():
 
 
 def report_github_issue(issue_text, title=None, confirm=True):
-    """
-    Compose a URL to open a new GitHub issue with the given text prefilled,
-    and attempt to launch it in the default web browser.
-
-    :param issue_text: The text of the issue to file
-    :param title: The title of the issue (optional)
-    :param confirm: Whether to ask for confirmation before opening the browser (default: True)
-    :return: None
-    """
     version_info = f"LoraCode version: {__version__}\n"
     python_version = f"Python version: {sys.version.split()[0]}\n"
     platform_info = f"Platform: {platform.platform()}\n"
@@ -143,9 +134,6 @@ def exception_handler(exc_type, exc_value, exc_traceback):
 
 
 def report_uncaught_exceptions():
-    """
-    Set up the global exception handler to report uncaught exceptions.
-    """
     sys.excepthook = exception_handler
 
 

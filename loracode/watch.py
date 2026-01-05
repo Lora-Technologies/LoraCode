@@ -14,7 +14,6 @@ from loracode.watch_prompts import watch_ask_prompt, watch_code_prompt
 
 
 def load_gitignores(gitignore_paths: list[Path]) -> Optional[PathSpec]:
-    """Load and parse multiple .gitignore files into a single PathSpec"""
     if not gitignore_paths:
         return None
 
@@ -60,8 +59,6 @@ def load_gitignores(gitignore_paths: list[Path]) -> Optional[PathSpec]:
 
 
 class FileWatcher:
-    """Watches source files for changes and AI comments"""
-
     ai_comment_pattern = re.compile(
         r"(?:#|//|--|;+) *(ai\b.*|ai\b.*|.*\bai[?!]?) *$", re.IGNORECASE
     )
@@ -84,7 +81,6 @@ class FileWatcher:
         coder.io.file_watcher = self
 
     def filter_func(self, change_type, path):
-        """Filter function for the file watcher"""
         path_obj = Path(path)
         path_abs = path_obj.absolute()
 
@@ -113,7 +109,6 @@ class FileWatcher:
             return
 
     def get_roots_to_watch(self):
-        """Determine which root paths to watch based on gitignore rules"""
         if self.gitignore_spec:
             roots = [
                 str(path)
@@ -126,7 +121,6 @@ class FileWatcher:
         return [str(self.root)]
 
     def handle_changes(self, changes):
-        """Process the detected changes and update state"""
         if not changes:
             return False
 
@@ -136,7 +130,6 @@ class FileWatcher:
         return True
 
     def watch_files(self):
-        """Watch for file changes and process them"""
         try:
             roots_to_watch = self.get_roots_to_watch()
 
@@ -155,7 +148,6 @@ class FileWatcher:
             raise e
 
     def start(self):
-        """Start watching for file changes"""
         self.stop_event = threading.Event()
         self.changed_files = set()
 
@@ -163,7 +155,6 @@ class FileWatcher:
         self.watcher_thread.start()
 
     def stop(self):
-        """Stop watching for file changes"""
         if self.stop_event:
             self.stop_event.set()
         if self.watcher_thread:
@@ -172,8 +163,6 @@ class FileWatcher:
             self.stop_event = None
 
     def process_changes(self):
-        """Get any detected file changes"""
-
         has_action = None
         added = False
         for fname in self.changed_files:
@@ -244,7 +233,6 @@ class FileWatcher:
         return res
 
     def get_ai_comments(self, filepath):
-        """Extract AI comment line numbers, comments and action status from a file"""
         line_nums = []
         comments = []
         has_action = None
@@ -271,7 +259,6 @@ class FileWatcher:
 
 
 def main():
-    """Example usage of the file watcher"""
     import argparse
 
     parser = argparse.ArgumentParser(description="Watch source files for changes")

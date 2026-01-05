@@ -2,7 +2,7 @@
 import difflib
 import sys
 
-from .dump import dump  # noqa: F401
+from .dump import dump 
 
 
 def main():
@@ -42,13 +42,6 @@ def assert_newlines(lines):
 
 
 def diff_partial_update(lines_orig, lines_updated, final=False, fname=None):
-    """
-    Given only the first part of an updated file, show the diff while
-    ignoring the block of "deleted" lines that are past the end of the
-    partially complete update.
-    """
-
-
     assert_newlines(lines_orig)
 
     num_orig_lines = len(lines_orig)

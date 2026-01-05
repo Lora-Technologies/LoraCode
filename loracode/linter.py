@@ -10,10 +10,10 @@ from pathlib import Path
 
 import oslex
 from grep_ast import TreeContext, filename_to_lang
-from grep_ast.tsl import get_parser  # noqa: E402
+from grep_ast.tsl import get_parser
 
-from loracode.dump import dump  # noqa: F401
-from loracode.run_cmd import run_cmd_subprocess  # noqa: F401
+from loracode.dump import dump
+from loracode.run_cmd import run_cmd_subprocess
 
 warnings.simplefilter("ignore", category=FutureWarning)
 
@@ -199,10 +199,6 @@ def lint_python_compile(fname, code):
 
 
 def basic_lint(fname, code):
-    """
-    Use tree-sitter to look for syntax errors, display them with tree context.
-    """
-
     lang = filename_to_lang(fname)
     if not lang:
         return
@@ -267,10 +263,6 @@ def traverse_tree(node):
 
 
 def find_filenames_and_linenums(text, fnames):
-    """
-    Search text for all occurrences of <filename>:\\d+ and make a list of them
-    where <filename> is one of the filenames in the list `fnames`.
-    """
     pattern = re.compile(r"(\b(?:" + "|".join(re.escape(fname) for fname in fnames) + r"):\d+\b)")
     matches = pattern.findall(text)
     result = {}
@@ -283,9 +275,6 @@ def find_filenames_and_linenums(text, fnames):
 
 
 def main():
-    """
-    Main function to parse files provided as command line arguments.
-    """
     if len(sys.argv) < 2:
         print("Usage: python linter.py <file1> <file2> ...")
         sys.exit(1)

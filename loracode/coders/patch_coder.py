@@ -9,7 +9,8 @@ from .patch_prompts import PatchPrompts
 
 
 class DiffError(ValueError):
-    """Any problem detected while parsing or applying a patch."""
+    """Exception raised for diff-related errors."""
+    pass
 
 
 class ActionType(str, Enum):

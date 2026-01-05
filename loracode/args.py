@@ -680,6 +680,25 @@ def get_parser(default_config_files, git_root):
         help="Specify the input device name for voice recording",
     )
 
+    group = parser.add_argument_group("Checkpoint settings")
+    group.add_argument(
+        "--load-checkpoint",
+        metavar="CHECKPOINT",
+        help="Load a checkpoint at startup to restore a previous session",
+    )
+    group.add_argument(
+        "--save-on-exit",
+        metavar="CHECKPOINT",
+        nargs="?",
+        const="auto",
+        help="Save a checkpoint when exiting (use 'auto' for automatic naming)",
+    )
+    group.add_argument(
+        "--checkpoint-dir",
+        metavar="DIR",
+        help="Specify a custom directory for storing checkpoints",
+    )
+
     group = parser.add_argument_group("Other settings")
     group.add_argument(
         "--disable-playwright",

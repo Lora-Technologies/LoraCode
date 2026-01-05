@@ -2,7 +2,6 @@
 
 import io
 import time
-
 from rich import box
 from rich.console import Console
 from rich.live import Live
@@ -11,7 +10,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from loracode.dump import dump  # noqa: F401
+from loracode.dump import dump
 
 _text_prefix = """
 # Header
@@ -46,11 +45,10 @@ _text_suffix = """
 
 The end.
 
-"""  # noqa: E501
+"""
 
 
 class NoInsetCodeBlock(CodeBlock):
-    """A code block with syntax highlighting and modern dark styling."""
 
     def __rich_console__(self, console, options):
         code = str(self.text).rstrip()
@@ -66,8 +64,6 @@ class NoInsetCodeBlock(CodeBlock):
 
 
 class LeftHeading(Heading):
-    """A heading class that renders left-justified with modern styling."""
-
     def __rich_console__(self, console, options):
         text = self.text
         text.justify = "left"
@@ -86,7 +82,6 @@ class LeftHeading(Heading):
 
 
 class NoInsetMarkdown(Markdown):
-    """Markdown with code blocks that have no padding and left-justified headings."""
 
     elements = {
         **Markdown.elements,
@@ -97,12 +92,6 @@ class NoInsetMarkdown(Markdown):
 
 
 class MarkdownStream:
-    """Streaming markdown renderer that progressively displays content with a live updating window.
-
-    Uses rich.console and rich.live to render markdown content with smooth scrolling
-    and partial updates. Maintains a sliding window of visible content while streaming
-    in new markdown text.
-    """
 
     live = None
     when = 0
@@ -126,14 +115,6 @@ class MarkdownStream:
         self._live_started = False
 
     def _render_markdown_to_lines(self, text):
-        """Render markdown text to a list of lines.
-
-        Args:
-            text (str): Markdown text to render
-
-        Returns:
-            list: List of rendered lines with line endings preserved
-        """
         string_io = io.StringIO()
         console = Console(file=string_io, force_terminal=True)
         markdown = NoInsetMarkdown(text, **self.mdargs)
@@ -143,7 +124,6 @@ class MarkdownStream:
         return output.splitlines(keepends=True)
 
     def __del__(self):
-        """Destructor to ensure Live display is properly cleaned up."""
         if self.live:
             try:
                 self.live.stop()
@@ -151,22 +131,6 @@ class MarkdownStream:
                 pass
 
     def update(self, text, final=False):
-        """Update the displayed markdown content.
-
-        Args:
-            text (str): The markdown text received so far
-            final (bool): If True, this is the final update and we should clean up
-
-        Splits the output into "stable" older lines and the "last few" lines
-        which aren't considered stable. They may shift around as new chunks
-        are appended to the markdown text.
-
-        The stable lines emit to the console above the Live window.
-        The unstable lines emit into the Live window so they can be repainted.
-
-        Markdown going to the console works better in terminal scrollback buffers.
-        The live window doesn't play nice with terminal scrollback.
-        """
         if not getattr(self, "_live_started", False):
             self.live = Live(Text(""), refresh_per_second=1.0 / self.min_delay)
             self.live.start()
@@ -214,9 +178,8 @@ class MarkdownStream:
         self.live.update(rest)
 
     def find_minimal_suffix(self, text, match_lines=50):
-        """
-        Splits text into chunks on blank lines "\n\n".
-        """
+        """Find minimal suffix for incremental rendering."""
+        pass
 
 
 if __name__ == "__main__":

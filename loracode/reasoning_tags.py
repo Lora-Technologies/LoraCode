@@ -11,16 +11,6 @@ REASONING_END = "------------\n► **ANSWER**"
 
 
 def remove_reasoning_content(res, reasoning_tag):
-    """
-    Remove reasoning content from text based on tags.
-
-    Args:
-        res (str): The text to process
-        reasoning_tag (str): The tag name to remove
-
-    Returns:
-        str: Text with reasoning content removed
-    """
     if not reasoning_tag:
         return res
 
@@ -36,17 +26,6 @@ def remove_reasoning_content(res, reasoning_tag):
 
 
 def replace_reasoning_tags(text, tag_name):
-    """
-    Replace opening and closing reasoning tags with standard formatting.
-    Ensures exactly one blank line before START and END markers.
-
-    Args:
-        text (str): The text containing the tags
-        tag_name (str): The name of the tag to replace
-
-    Returns:
-        str: Text with reasoning tags replaced with standard format
-    """
     if not text:
         return text
 
@@ -58,16 +37,6 @@ def replace_reasoning_tags(text, tag_name):
 
 
 def format_reasoning_content(reasoning_content, tag_name):
-    """
-    Format reasoning content with appropriate tags.
-
-    Args:
-        reasoning_content (str): The content to format
-        tag_name (str): The tag name to use
-
-    Returns:
-        str: Formatted reasoning content with tags
-    """
     if not reasoning_content:
         return ""
 

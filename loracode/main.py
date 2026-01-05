@@ -25,6 +25,7 @@ from loracode.args import get_parser
 from loracode.coders import Coder
 from loracode.coders.base_coder import UnknownEditFormat
 from loracode.commands import Commands, SwitchCoder
+from loracode.hooks import HookEvent
 from loracode.copypaste import ClipboardWatcher
 from loracode.deprecated import handle_deprecated_model_args
 from loracode.format_settings import format_settings, scrub_sensitive_info
@@ -44,7 +45,7 @@ from loracode.report import report_uncaught_exceptions
 from loracode.versioncheck import check_version, install_from_main_branch, install_upgrade
 from loracode.watch import FileWatcher
 
-from .dump import dump  # noqa: F401
+from .dump import dump
 
 
 _lora_code_client = None
@@ -52,7 +53,6 @@ _lora_code_auth = None
 
 
 def get_lora_code_client():
-    """Get or create the global Lora Code client instance."""
     global _lora_code_client, _lora_code_auth
     
     api_base = os.environ.get("LORA_CODE_API_BASE")
@@ -75,7 +75,6 @@ def get_lora_code_client():
 
 
 def get_lora_code_auth():
-    """Get or create the global Lora Code auth instance."""
     global _lora_code_auth
     
     if _lora_code_auth is None:
@@ -86,17 +85,6 @@ def get_lora_code_auth():
 
 
 def select_lora_code_model(args, io, analytics):
-    """
-    Select a model from Lora Code API.
-    
-    Args:
-        args: Command line arguments
-        io: InputOutput instance
-        analytics: Analytics instance
-        
-    Returns:
-        Model name string or None if selection fails
-    """
     if args.model:
         return args.model
     
@@ -179,7 +167,6 @@ def check_config_files_for_yes(config_files):
 
 
 def get_git_root():
-    """Try and guess the git repo, since the conf.yml can be at the repo root"""
     try:
         repo = git.Repo(search_parent_directories=True)
         return repo.working_tree_dir
@@ -188,8 +175,6 @@ def get_git_root():
 
 
 def guessed_wrong_repo(io, git_root, fnames, git_dname):
-    """After we parse the args, we can determine the real repo. Did we guess wrong?"""
-
     try:
         check_repo = Path(GitRepo(io, fnames, git_dname).root).resolve()
     except (OSError,) + ANY_GIT_ERROR:
@@ -450,7 +435,7 @@ def register_models(git_root, model_settings_fname, io, verbose=False):
             if verbose:
                 io.tool_output(t("model.settings_loaded"))
                 for file_loaded in files_loaded:
-                    io.tool_output(f"  - {file_loaded}")  # noqa: E221
+                    io.tool_output(f"  - {file_loaded}")
         elif verbose:
             io.tool_output(t("model.settings_none"))
     except Exception as e:
@@ -622,10 +607,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if return_coder and args.yes_always is None:
         args.yes_always = True
 
-    # Create and configure AutoApproveManager
     auto_approve_manager = AutoApproveManager()
     
-    # Validate --auto-approve and --auto-reject arguments
     is_valid, error_msg, approve_cats, reject_cats = validate_auto_approve_args(
         args.auto_approve, args.auto_reject
     )
@@ -634,7 +617,6 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         print(f"Error: {error_msg}")
         return 1
     
-    # Apply CLI arguments to the manager
     apply_auto_approve_args(
         auto_approve_manager,
         approve_cats,
@@ -1076,6 +1058,14 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         analytics.event("copy-paste mode")
         ClipboardWatcher(coder.io, verbose=args.verbose)
 
+
+    if coder.hook_manager:
+        context = coder.get_hook_context(HookEvent.SESSION_START)
+        results = coder.hook_manager.trigger(HookEvent.SESSION_START, context)
+        for result in results:
+            if result.stdout:
+                io.tool_output(result.stdout.strip())
+
     coder.show_announcements()
 
     if args.show_prompts:
@@ -1154,6 +1144,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if args.load:
         commands.cmd_load(args.load)
 
+    if args.load_checkpoint:
+        commands.cmd_checkpoint_load(args.load_checkpoint)
+
     if args.message:
         io.add_to_input_history(args.message)
         io.tool_output()
@@ -1161,6 +1154,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             coder.run(with_message=args.message)
         except SwitchCoder:
             pass
+        if coder.hook_manager:
+            context = coder.get_hook_context(HookEvent.SESSION_END)
+            coder.hook_manager.trigger(HookEvent.SESSION_END, context)
         analytics.event("exit", reason="Completed --message")
         return
 
@@ -1177,7 +1173,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             io.tool_error(t("main.message_file_error", error=e))
             analytics.event("exit", reason="Message file IO error")
             return 1
-
+        if coder.hook_manager:
+            context = coder.get_hook_context(HookEvent.SESSION_END)
+            coder.hook_manager.trigger(HookEvent.SESSION_END, context)
         analytics.event("exit", reason="Completed --message-file")
         return
 
@@ -1187,10 +1185,23 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     analytics.event("cli session", main_model=main_model, edit_format=main_model.edit_format)
 
+    def trigger_session_end():
+        if args.save_on_exit:
+            checkpoint_name = args.save_on_exit if args.save_on_exit != "auto" else None
+            commands.cmd_checkpoint_save(checkpoint_name or "")
+        
+        if coder.hook_manager:
+            context = coder.get_hook_context(HookEvent.SESSION_END)
+            results = coder.hook_manager.trigger(HookEvent.SESSION_END, context)
+            for result in results:
+                if result.stdout:
+                    io.tool_output(result.stdout.strip())
+
     while True:
         try:
             coder.ok_to_warm_cache = bool(args.cache_keepalive_pings)
             coder.run()
+            trigger_session_end()
             analytics.event("exit", reason="Completed main CLI coder.run")
             return
         except SwitchCoder as switch:
@@ -1211,7 +1222,6 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
 
 def is_first_run_of_new_version(io, verbose=False):
-    """Check if this is the first run of a new version/executable combination"""
     installs_file = Path.home() / ".loracode" / "installs.json"
     key = (__version__, sys.executable)
 
@@ -1283,10 +1293,10 @@ def check_and_load_imports(io, is_first_run, verbose=False):
 def load_slow_imports(swallow=True):
 
     try:
-        import httpx  # noqa: F401
-        import networkx  # noqa: F401
-        import numpy  # noqa: F401
-        import requests  # noqa: F401
+        import httpx  
+        import networkx
+        import numpy
+        import requests
     except Exception as e:
         if not swallow:
             raise e

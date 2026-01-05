@@ -86,13 +86,6 @@ def run_cmd_subprocess(command, verbose=False, cwd=None, encoding=sys.stdout.enc
 
 
 def run_cmd_pexpect(command, verbose=False, cwd=None):
-    """
-    Run a shell command interactively using pexpect, capturing all output.
-
-    :param command: The command to run as a string.
-    :param verbose: If True, print output in real-time.
-    :return: A tuple containing (exit_status, output)
-    """
     if verbose:
         print("Using run_cmd_pexpect:", command)
 

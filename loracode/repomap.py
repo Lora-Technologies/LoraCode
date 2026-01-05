@@ -170,8 +170,6 @@ class RepoMap:
             return fname
 
     def tags_cache_error(self, original_error=None):
-        """Handle SQLite errors by trying to recreate cache, falling back to dict if needed"""
-
         if self.verbose and original_error:
             self.io.tool_warning(t("repomap.cache_error", error=str(original_error)))
 

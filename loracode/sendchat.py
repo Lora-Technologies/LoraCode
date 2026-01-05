@@ -3,10 +3,6 @@ from loracode.utils import format_messages
 
 
 def sanity_check_messages(messages):
-    """Check if messages alternate between user and assistant roles.
-    System messages can be interspersed anywhere.
-    Also verifies the last non-system message is from the user.
-    Returns True if valid, False otherwise."""
     last_role = None
     last_non_system_role = None
 
@@ -26,17 +22,6 @@ def sanity_check_messages(messages):
 
 
 def ensure_alternating_roles(messages):
-    """Ensure messages alternate between 'assistant' and 'user' roles.
-
-    Inserts empty messages of the opposite role when consecutive messages
-    of the same role are found.
-
-    Args:
-        messages: List of message dictionaries with 'role' and 'content' keys.
-
-    Returns:
-        List of messages with alternating roles.
-    """
     if not messages:
         return messages
 

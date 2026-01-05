@@ -518,34 +518,26 @@ def gui_main():
     
     st.markdown("""
     <style>
-        /* Dark theme base */
         .stApp {
             background-color: #1E1E1E;
         }
         
-        /* Sidebar styling */
         [data-testid="stSidebar"] {
             background-color: #252526;
             border-right: 1px solid #3C3C3C;
         }
-        
-        /* Chat message styling */
         .stChatMessage {
             background-color: #2D2D2D;
             border-radius: 8px;
             padding: 12px;
             margin: 8px 0;
         }
-        
-        /* Input styling */
         .stTextInput input {
             background-color: #3C3C3C;
             border: 1px solid #4B4B4B;
             color: #D4D4D4;
             border-radius: 6px;
         }
-        
-        /* Button styling */
         .stButton button {
             background-color: #094771;
             color: #FFFFFF;
@@ -557,21 +549,15 @@ def gui_main():
         .stButton button:hover {
             background-color: #0E639C;
         }
-        
-        /* Code block styling */
         .stCodeBlock {
             background-color: #1E1E1E;
             border: 1px solid #3C3C3C;
             border-radius: 6px;
         }
-        
-        /* Expander styling */
         .streamlit-expanderHeader {
             background-color: #2D2D2D;
             border-radius: 6px;
         }
-        
-        /* Warning/Info boxes */
         .stWarning {
             background-color: rgba(204, 167, 0, 0.1);
             border-left: 4px solid #CCA700;

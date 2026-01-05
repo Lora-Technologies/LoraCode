@@ -5,8 +5,6 @@ import pyperclip
 
 
 class ClipboardWatcher:
-    """Watches clipboard for changes and updates IO placeholder"""
-
     def __init__(self, io, verbose=False):
         self.io = io
         self.verbose = verbose
@@ -16,7 +14,6 @@ class ClipboardWatcher:
         self.io.clipboard_watcher = self
 
     def start(self):
-        """Start watching clipboard for changes"""
         self.stop_event = threading.Event()
         self.last_clipboard = pyperclip.paste()
 
@@ -43,7 +40,6 @@ class ClipboardWatcher:
         self.watcher_thread.start()
 
     def stop(self):
-        """Stop watching clipboard for changes"""
         if self.stop_event:
             self.stop_event.set()
         if self.watcher_thread:
@@ -53,7 +49,6 @@ class ClipboardWatcher:
 
 
 def main():
-    """Example usage of the clipboard watcher"""
     from loracode.io import InputOutput
 
     io = InputOutput()

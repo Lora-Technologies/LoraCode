@@ -30,6 +30,7 @@ from rich.console import Console
 from loracode import __version__, models, prompts, urls, utils
 from loracode.analytics import Analytics
 from loracode.commands import Commands
+from loracode.hooks import HookManager, HookEvent
 from loracode.exceptions import LiteLLMExceptions
 from loracode.history import ChatSummary
 from loracode.auto_approve import ApprovalCategory
@@ -120,6 +121,9 @@ class Coder:
     chat_language = None
     commit_language = None
     file_watcher = None
+    hook_manager = None
+    checkpoint_manager = None
+    session_id = None
 
     @classmethod
     def create(
@@ -174,6 +178,8 @@ class Coder:
                 total_tokens_sent=from_coder.total_tokens_sent,
                 total_tokens_received=from_coder.total_tokens_received,
                 file_watcher=from_coder.file_watcher,
+                hook_manager=from_coder.hook_manager,
+                checkpoint_manager=from_coder.checkpoint_manager,
             )
             use_kwargs.update(update)
             use_kwargs.update(kwargs)
@@ -199,7 +205,6 @@ class Coder:
         return new_coder
 
     def get_announcements(self):
-        """Generate startup announcements with modern formatting."""
         lines = []
         
         lines.append(f"* LoraCode v{__version__}")
@@ -323,6 +328,8 @@ class Coder:
         file_watcher=None,
         auto_copy_context=False,
         auto_accept_architect=True,
+        hook_manager=None,
+        checkpoint_manager=None,
     ):
         self.analytics = analytics if analytics is not None else Analytics()
 
@@ -458,6 +465,26 @@ class Coder:
         if not self.repo:
             self.root = utils.find_common_root(self.abs_fnames)
 
+        # Initialize HookManager after root is set
+        import uuid
+        self.session_id = str(uuid.uuid4())[:8]
+        if hook_manager:
+            self.hook_manager = hook_manager
+        else:
+            self.hook_manager = HookManager(Path(self.root), io)
+            self.hook_manager.load_hooks()
+
+        # Initialize CheckpointManager after root is set
+        from loracode.checkpoints import CheckpointManager
+        if checkpoint_manager:
+            self.checkpoint_manager = checkpoint_manager
+        else:
+            self.checkpoint_manager = CheckpointManager(
+                Path(self.root),
+                io=io,
+                hook_manager=self.hook_manager
+            )
+
         if read_only_fnames:
             self.abs_read_only_fnames = set()
             for fname in read_only_fnames:
@@ -567,7 +594,6 @@ class Coder:
         return True
 
     def _stop_waiting_spinner(self):
-        """Stop and clear the waiting spinner if it is running."""
         spinner = getattr(self, "waiting_spinner", None)
         if spinner:
             try:
@@ -896,6 +922,22 @@ class Coder:
         else:
             message = user_message
 
+        # Trigger BeforeAgent hook
+        if self.hook_manager and message:
+            context = self.get_hook_context(
+                HookEvent.BEFORE_AGENT,
+                prompt=message,
+            )
+            results = self.hook_manager.trigger(HookEvent.BEFORE_AGENT, context)
+            
+            # Check for deny decision
+            for result in results:
+                if result.decision == "deny":
+                    self.io.tool_warning(f"BeforeAgent hook blocked: {result.stderr or 'Operation denied'}")
+                    return
+                if result.stdout:
+                    self.io.tool_output(result.stdout.strip())
+
         while message:
             self.reflected_message = None
             list(self.send_message(message))
@@ -905,13 +947,25 @@ class Coder:
 
             if self.num_reflections >= self.max_reflections:
                 self.io.tool_warning(f"Only {self.max_reflections} reflections allowed, stopping.")
-                return
+                break
 
             self.num_reflections += 1
             message = self.reflected_message
 
+        # Trigger AfterAgent hook
+        if self.hook_manager:
+            context = self.get_hook_context(
+                HookEvent.AFTER_AGENT,
+                response=self.partial_response_content or "",
+            )
+            results = self.hook_manager.trigger(HookEvent.AFTER_AGENT, context)
+            
+            # Show output from hooks
+            for result in results:
+                if result.stdout:
+                    self.io.tool_output(result.stdout.strip())
+
     def check_and_open_urls(self, exc, friendly_msg=None):
-        """Check exception for URLs, offer to open in a browser, with user-friendly error msgs."""
         text = str(exc)
 
         if friendly_msg:
@@ -928,7 +982,6 @@ class Coder:
         return urls
 
     def check_for_urls(self, inp: str) -> List[str]:
-        """Check input for URLs and offer to add them to the chat."""
         if not self.detect_urls:
             return inp
 
@@ -1011,12 +1064,6 @@ class Coder:
         self.cur_messages = []
 
     def normalize_language(self, lang_code):
-        """
-        Convert a locale code such as ``en_US`` or ``fr`` into a readable
-        language name (e.g. ``English`` or ``French``).  If Babel is
-        available it is used for reliable conversion; otherwise a small
-        built-in fallback map handles common languages.
-        """
         if not lang_code:
             return None
 
@@ -1054,15 +1101,6 @@ class Coder:
         return fallback.get(primary_lang_code, lang_code)
 
     def get_user_language(self):
-        """
-        Detect the user's language preference and return a human-readable
-        language name such as ``English``. Detection order:
-
-        1. ``self.chat_language`` if explicitly set
-        2. ``locale.getlocale()``
-        3. ``LANG`` / ``LANGUAGE`` / ``LC_ALL`` / ``LC_MESSAGES`` environment variables
-        """
-
         if self.chat_language:
             return self.normalize_language(self.chat_language)
 
@@ -1082,6 +1120,16 @@ class Coder:
                 return self.normalize_language(lang)
 
         return None
+
+    def get_hook_context(self, event: HookEvent, **extra_fields) -> dict:
+        context = {
+            "session_id": self.session_id,
+            "cwd": str(self.root),
+            "hook_event_name": event.value,
+            "timestamp": datetime.now().isoformat(),
+        }
+        context.update(extra_fields)
+        return context
 
     def get_platform_info(self):
         platform_text = ""
@@ -1349,7 +1397,6 @@ class Coder:
         return chunks
 
     def check_tokens(self, messages):
-        """Check if the messages will fit within the model's token limits."""
         input_tokens = self.main_model.token_count(messages)
         max_input_tokens = self.main_model.info.get("max_input_tokens") or 0
 
@@ -1647,7 +1694,6 @@ class Coder:
         return res
 
     def __del__(self):
-        """Cleanup when the Coder object is destroyed."""
         self.ok_to_warm_cache = False
 
     def add_assistant_reply_to_cur_messages(self):
@@ -1922,8 +1968,6 @@ class Coder:
         return self.get_multi_response_content_in_progress()
 
     def remove_reasoning_content(self):
-        """Remove reasoning content from the model's response."""
-
         self.partial_response_content = remove_reasoning_content(
             self.partial_response_content,
             self.reasoning_tag_name,
@@ -2216,6 +2260,28 @@ class Coder:
 
     def apply_updates(self):
         edited = set()
+        
+        # Auto-save checkpoint before file modifications (if enabled)
+        if self.checkpoint_manager and self.checkpoint_manager.auto_save_config.enabled:
+            self.checkpoint_manager.auto_save(self)
+        
+        # Trigger BeforeTool hook before applying edits
+        if self.hook_manager:
+            context = self.get_hook_context(
+                HookEvent.BEFORE_TOOL,
+                tool_name="apply_edits",
+                tool_input={"action": "file_edit"},
+            )
+            results = self.hook_manager.trigger(HookEvent.BEFORE_TOOL, context)
+            
+            # Check for deny decision
+            for result in results:
+                if result.decision == "deny":
+                    self.io.tool_warning(f"BeforeTool hook blocked edit: {result.stderr or 'Operation denied'}")
+                    return edited
+                if result.stdout:
+                    self.io.tool_output(result.stdout.strip())
+        
         try:
             edits = self.get_edits()
             edits = self.apply_edits_dry_run(edits)
@@ -2253,6 +2319,20 @@ class Coder:
                 self.io.tool_output(f"Did not apply edit to {path} (--dry-run)")
             else:
                 self.io.tool_output(f"Applied edit to {path}")
+
+        # Trigger AfterTool hook after applying edits
+        if self.hook_manager and edited:
+            context = self.get_hook_context(
+                HookEvent.AFTER_TOOL,
+                tool_name="apply_edits",
+                tool_output={"edited_files": list(edited)},
+            )
+            results = self.hook_manager.trigger(HookEvent.AFTER_TOOL, context)
+            
+            # Show output from hooks
+            for result in results:
+                if result.stdout:
+                    self.io.tool_output(result.stdout.strip())
 
         return edited
 
@@ -2380,6 +2460,23 @@ class Coder:
         ):
             return
 
+        # Trigger BeforeTool hook before running shell commands
+        if self.hook_manager:
+            context = self.get_hook_context(
+                HookEvent.BEFORE_TOOL,
+                tool_name="shell_command",
+                tool_input={"commands": commands_str},
+            )
+            results = self.hook_manager.trigger(HookEvent.BEFORE_TOOL, context)
+            
+            # Check for deny decision
+            for result in results:
+                if result.decision == "deny":
+                    self.io.tool_warning(f"BeforeTool hook blocked shell command: {result.stderr or 'Operation denied'}")
+                    return
+                if result.stdout:
+                    self.io.tool_output(result.stdout.strip())
+
         accumulated_output = ""
         for command in commands:
             command = command.strip()
@@ -2392,6 +2489,20 @@ class Coder:
             exit_status, output = run_cmd(command, error_print=self.io.tool_error, cwd=self.root)
             if output:
                 accumulated_output += f"Output from {command}\n{output}\n"
+
+        # Trigger AfterTool hook after running shell commands
+        if self.hook_manager:
+            context = self.get_hook_context(
+                HookEvent.AFTER_TOOL,
+                tool_name="shell_command",
+                tool_output={"output": accumulated_output},
+            )
+            results = self.hook_manager.trigger(HookEvent.AFTER_TOOL, context)
+            
+            # Show output from hooks
+            for result in results:
+                if result.stdout:
+                    self.io.tool_output(result.stdout.strip())
 
         if accumulated_output.strip() and self.io.confirm_ask(
             "Add command output to the chat?", allow_never=True

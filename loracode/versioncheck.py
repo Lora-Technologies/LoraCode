@@ -14,10 +14,6 @@ VERSION_CHECK_FNAME = Path.home() / ".loracode" / "caches" / "versioncheck"
 
 
 def install_from_main_branch(io):
-    """
-    Install the latest version of LoraCode from the main branch of the GitHub repository.
-    """
-
     return utils.check_pip_install_extra(
         io,
         None,
@@ -28,10 +24,6 @@ def install_from_main_branch(io):
 
 
 def install_upgrade(io, latest_version=None):
-    """
-    Install the latest version of LoraCode from PyPI.
-    """
-
     if latest_version:
         new_ver_text = t("version.newer_available", version=latest_version)
     else:

@@ -97,7 +97,7 @@ class YamlHelpFormatter(argparse.HelpFormatter):
 
 # Note: You can only put OpenAI and Anthropic API keys in the YAML
 # config file. Keys for all APIs can be stored in a .env file
-# https://loracode.dev/docs/config/dotenv.html
+# https://api.loratech.dev/docs/
 
 """
 

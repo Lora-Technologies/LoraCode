@@ -1,5 +1,4 @@
 def add_deprecated_model_args(parser, group):
-    """Add deprecated model shortcut arguments to the argparse parser."""
     opus_model = "claude-3-opus-20240229"
     group.add_argument(
         "--opus",
@@ -84,7 +83,6 @@ def add_deprecated_model_args(parser, group):
 
 
 def handle_deprecated_model_args(args, io):
-    """Handle deprecated model shortcut arguments and provide appropriate warnings."""
     model_map = {
         "opus": "claude-3-opus-20240229",
         "sonnet": "anthropic/claude-3-7-sonnet-20250219",

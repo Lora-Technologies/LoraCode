@@ -84,18 +84,11 @@ def make_repo(path=None):
 
 
 def is_image_file(file_name):
-    """
-    Check if the given file name has an image file extension.
-
-    :param file_name: The name of the file to check.
-    :return: True if the file is an image, False otherwise.
-    """
     file_name = str(file_name)
     return any(file_name.endswith(ext) for ext in IMAGE_EXTENSIONS)
 
 
 def safe_abs_path(res):
-    "Gives an abs path, which safely returns a full (not 8.3) windows path"
     res = Path(res).resolve()
     return str(res)
 
@@ -330,13 +323,4 @@ def check_pip_install_extra(io, module, prompt, pip_install_cmd, self_update=Fal
 
 
 def printable_shell_command(cmd_list):
-    """
-    Convert a list of command arguments to a properly shell-escaped string.
-
-    Args:
-        cmd_list (list): List of command arguments.
-
-    Returns:
-        str: Shell-escaped command string.
-    """
     return oslex.join(cmd_list)

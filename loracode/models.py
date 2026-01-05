@@ -17,7 +17,7 @@ import yaml
 from PIL import Image
 
 from loracode import __version__
-from loracode.dump import dump  # noqa: F401
+from loracode.dump import dump 
 from loracode.i18n import t
 from loracode.sendchat import ensure_alternating_roles, sanity_check_messages
 from loracode.utils import check_pip_install_extra
@@ -38,7 +38,6 @@ MODEL_ALIASES = {
 
 
 class LoraCodeMessage:
-    """Wrapper for Lora Code API message response."""
     def __init__(self, content, thinking=None):
         self.content = content
         self.thinking = thinking
@@ -46,7 +45,6 @@ class LoraCodeMessage:
 
 
 class LoraCodeChoice:
-    """Wrapper for Lora Code API choice response."""
     def __init__(self, message_content, thinking=None):
         self.message = LoraCodeMessage(message_content, thinking)
         self.delta = LoraCodeMessage(message_content, thinking)
@@ -54,7 +52,6 @@ class LoraCodeChoice:
 
 
 class LoraCodeResponse:
-    """Wrapper for Lora Code API non-streaming response."""
     def __init__(self, response_data):
         self._data = response_data
         content = ""
@@ -72,7 +69,6 @@ class LoraCodeResponse:
 
 
 class LoraCodeStreamResponse:
-    """Wrapper for Lora Code API streaming response."""
     def __init__(self, response_iter, include_thinking=False):
         self._iter = response_iter
         self._content_buffer = []
@@ -101,20 +97,17 @@ class LoraCodeStreamResponse:
 
 
 class LoraCodeStreamChunk:
-    """Wrapper for a single streaming chunk."""
     def __init__(self, content, is_thinking=False):
         self.choices = [LoraCodeStreamChoice(content, is_thinking)]
 
 
 class LoraCodeStreamChoice:
-    """Wrapper for streaming choice with delta."""
     def __init__(self, content, is_thinking=False):
         self.delta = LoraCodeDelta(content, is_thinking)
         self.finish_reason = None
 
 
 class LoraCodeDelta:
-    """Wrapper for streaming delta content."""
     def __init__(self, content, is_thinking=False):
         self.content = content if not is_thinking else None
         self.thinking = content if is_thinking else None
@@ -155,10 +148,6 @@ with importlib.resources.open_text("loracode.resources", "model-settings.yml") a
 
 
 class LoraCodeModelInfoManager:
-    """
-    Manages model information from Lora Code API.
-    Replaces the litellm-based ModelInfoManager.
-    """
     CACHE_TTL = 60 * 60 * 24
 
     def __init__(self):
@@ -174,7 +163,6 @@ class LoraCodeModelInfoManager:
         self.verify_ssl = verify_ssl
 
     def _get_client(self):
-        """Get or create Lora Code client."""
         if self._lora_code_client is None:
             try:
                 from loracode.lora_code_client import LoraCodeClient
@@ -202,7 +190,6 @@ class LoraCodeModelInfoManager:
         self._cache_loaded = True
 
     def _update_cache(self):
-        """Fetch model info from Lora Code API and cache it."""
         try:
             client = self._get_client()
             if client:
@@ -243,7 +230,6 @@ class LoraCodeModelInfoManager:
         return self.content.get(model, dict())
 
     def get_model_info(self, model):
-        """Get model info from cache or Lora Code API."""
         cached_info = self.get_model_from_cached_json_db(model)
         if cached_info:
             return cached_info
@@ -255,30 +241,14 @@ class LoraCodeModelInfoManager:
 model_info_manager = LoraCodeModelInfoManager()
 
 
-class LoraCodeModel:
-    """
-    Simplified model class for Lora Code API integration.
-    
-    This class provides a clean interface for working with Lora Code models,
-    fetching model information from the Lora Code API.
-    """
-    
+class LoraCodeModel:    
     def __init__(self, model_id: str, client=None):
-        """
-        Initialize a Lora Code model.
-        
-        Args:
-            model_id: The model ID (e.g., "lora-code-v1")
-            client: Optional LoraCodeClient instance. If not provided,
-                   a new client will be created.
-        """
         self.name = model_id
         self._client = client
         self._info = None
     
     @property
     def client(self):
-        """Get or create the Lora Code client."""
         if self._client is None:
             try:
                 from loracode.lora_code_client import LoraCodeClient
@@ -289,13 +259,11 @@ class LoraCodeModel:
     
     @property
     def info(self) -> dict:
-        """Get model information from Lora Code API."""
         if self._info is None:
             self._info = self._fetch_model_info()
         return self._info
     
     def _fetch_model_info(self) -> dict:
-        """Fetch model info from Lora Code API."""
         if self.client is None:
             return {}
         
@@ -318,11 +286,9 @@ class LoraCodeModel:
         return {}
     
     def is_valid(self) -> bool:
-        """Check if this model exists in Lora Code API."""
         return bool(self.info)
     
     def get_context_length(self) -> int:
-        """Get the model's context length."""
         return self.info.get("context_length", 0)
     
     def __str__(self):
@@ -373,7 +339,6 @@ class Model(ModelSettings):
         return model_info_manager.get_model_info(model)
 
     def _copy_fields(self, source):
-        """Helper to copy fields from a ModelSettings instance to self"""
         for field in fields(ModelSettings):
             val = getattr(source, field.name)
             setattr(self, field.name, val)
@@ -397,7 +362,6 @@ class Model(ModelSettings):
         if not exact_match:
             self.apply_generic_model_settings(model_lower)
 
-        # Check API for thinking capability
         self._apply_api_capabilities(model)
 
         if (
@@ -415,7 +379,6 @@ class Model(ModelSettings):
                     self.extra_params[key] = value
 
     def _apply_api_capabilities(self, model_name):
-        """Apply capabilities from API if available."""
         try:
             from loracode.lora_code_client import LoraCodeClient
             client = LoraCodeClient()
@@ -426,12 +389,10 @@ class Model(ModelSettings):
                     if model_info.supports_thinking:
                         if "thinking_tokens" not in self.accepts_settings:
                             self.accepts_settings.append("thinking_tokens")
-                        # Auto-enable thinking with default budget if not already set
                         if not self.extra_params or "thinking" not in self.extra_params:
                             self.set_thinking_tokens("8096")
                     break
         except Exception:
-            # Silently fail if API is not available
             pass
 
     def apply_generic_model_settings(self, model):
@@ -653,13 +614,11 @@ class Model(ModelSettings):
         return self.editor_model
 
     def tokenizer(self, text):
-        """Simple tokenizer using word-based estimation."""
         if isinstance(text, str):
             return len(text) // 4
         return 0
 
     def token_count(self, messages):
-        """Count tokens in messages using simple estimation."""
         if type(messages) is list:
             try:
                 total = 0
@@ -687,12 +646,6 @@ class Model(ModelSettings):
             return 0
 
     def token_count_for_image(self, fname):
-        """
-        Calculate the token cost for an image assuming high detail.
-        The token cost is determined by the size of the image.
-        :param fname: The filename of the image.
-        :return: The token cost for the image.
-        """
         width, height = self.get_image_size(fname)
 
         max_dimension = max(width, height)
@@ -714,16 +667,10 @@ class Model(ModelSettings):
         return token_cost
 
     def get_image_size(self, fname):
-        """
-        Retrieve the size of an image.
-        :param fname: The filename of the image.
-        :return: A tuple (width, height) representing the image size in pixels.
-        """
         with Image.open(fname) as img:
             return img.size
 
     def fast_validate_environment(self):
-        """Fast path for Lora Code authentication check."""
         if os.environ.get("LORA_CODE_API_KEY"):
             return dict(keys_in_environment=["LORA_CODE_API_KEY"], missing_keys=[])
         
@@ -738,7 +685,6 @@ class Model(ModelSettings):
         return None
 
     def validate_environment(self):
-        """Validate Lora Code authentication."""
         res = self.fast_validate_environment()
         if res:
             return res
@@ -758,16 +704,6 @@ class Model(ModelSettings):
         return map_tokens
 
     def parse_token_value(self, value):
-        """
-        Parse a token value string into an integer.
-        Accepts formats: 8096, "8k", "10.5k", "0.5M", "10K", etc.
-
-        Args:
-            value: String or int token value
-
-        Returns:
-            Integer token value
-        """
         if isinstance(value, int):
             return value
 
@@ -788,11 +724,6 @@ class Model(ModelSettings):
         return int(float(value) * multiplier)
 
     def set_thinking_tokens(self, value):
-        """
-        Set the thinking token budget for models that support it.
-        Accepts formats: 8096, "8k", "10.5k", "0.5M", "10K", etc.
-        Pass "0" to disable thinking tokens.
-        """
         if value is not None:
             num_tokens = self.parse_token_value(value)
             self.use_temperature = False
@@ -806,7 +737,6 @@ class Model(ModelSettings):
                     del self.extra_params["thinking"]
 
     def get_raw_thinking_tokens(self):
-        """Get formatted thinking token budget if available"""
         budget = None
 
         if self.extra_params:
@@ -848,7 +778,6 @@ class Model(ModelSettings):
         return self.name.startswith("ollama/") or self.name.startswith("ollama_chat/")
 
     def _get_lora_code_client(self):
-        """Get or create Lora Code client for API calls."""
         if not hasattr(self, '_lora_client') or self._lora_client is None:
             try:
                 from loracode.main import get_lora_code_client
@@ -873,7 +802,6 @@ class Model(ModelSettings):
         return self._lora_client
 
     def send_completion(self, messages, functions, stream, temperature=None):
-        """Send completion request to Lora Code API."""
         if os.environ.get("LORACODE_SANITY_CHECK_TURNS"):
             sanity_check_messages(messages)
 
@@ -945,7 +873,6 @@ class Model(ModelSettings):
             raise Exception(t("model.api_error_generic", error=e))
 
     def simple_send_with_retries(self, messages):
-        """Send completion with retry logic."""
         if "deepseek-reasoner" in self.name:
             messages = ensure_alternating_roles(messages)
         retry_delay = 0.125
@@ -1068,13 +995,6 @@ def sanity_check_model(io, model):
 
 
 def check_for_dependencies(io, model_name):
-    """
-    Check for model-specific dependencies and install them if needed.
-
-    Args:
-        io: The IO object for user interaction
-        model_name: The name of the model to check dependencies for
-    """
     if model_name.startswith("bedrock/"):
         check_pip_install_extra(
             io, "boto3", "AWS Bedrock models require the boto3 package.", ["boto3"]
@@ -1090,7 +1010,6 @@ def check_for_dependencies(io, model_name):
 
 
 def fuzzy_match_models(name):
-    """Find models matching the given name from Lora Code API."""
     name = name.lower()
 
     chat_models = set()

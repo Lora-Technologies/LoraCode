@@ -14,9 +14,11 @@ from prompt_toolkit.completion import Completion, PathCompleter
 from prompt_toolkit.document import Document
 
 from loracode import models, prompts, voice
+from loracode.checkpoints import CheckpointManager
 from loracode.editor import pipe_editor
 from loracode.format_settings import format_settings
 from loracode.help import Help, install_help_extra
+from loracode.hooks import HookEvent, HookManager
 from loracode.i18n import t
 from loracode.auto_approve import ApprovalCategory, ApprovalRule
 from loracode.io import CommandCompletionException
@@ -28,7 +30,7 @@ from loracode.run_cmd import run_cmd
 from loracode.scrape import Scraper, install_playwright
 from loracode.utils import is_image_file
 
-from .dump import dump  # noqa: F401
+from .dump import dump
 
 
 class SwitchCoder(Exception):
@@ -88,8 +90,6 @@ class Commands:
         self.original_read_only_fnames = set(original_read_only_fnames or [])
 
     def cmd_model(self, args):
-        "Switch the Main Model to a new LLM"
-
         model_name = args.strip()
         if not model_name:
             announcements = "\n".join(self.coder.get_announcements())
@@ -113,8 +113,6 @@ class Commands:
         raise SwitchCoder(main_model=model, edit_format=new_edit_format)
 
     def cmd_editor_model(self, args):
-        "Switch the Editor Model to a new LLM"
-
         model_name = args.strip()
         model = models.Model(
             self.coder.main_model.name,
@@ -125,8 +123,6 @@ class Commands:
         raise SwitchCoder(main_model=model)
 
     def cmd_weak_model(self, args):
-        "Switch the Weak Model to a new LLM"
-
         model_name = args.strip()
         model = models.Model(
             self.coder.main_model.name,
@@ -137,8 +133,6 @@ class Commands:
         raise SwitchCoder(main_model=model)
 
     def cmd_chat_mode(self, args):
-        "Switch to a new chat mode"
-
         from loracode import coders
 
         ef = args.strip()
@@ -208,8 +202,6 @@ class Commands:
         return models
 
     def cmd_models(self, args):
-        "Search the list of available models"
-
         args = args.strip()
 
         if args:
@@ -218,8 +210,6 @@ class Commands:
             self.io.tool_output(t("search.provide_name"))
 
     def cmd_web(self, args, return_content=False):
-        "Scrape a webpage, convert to markdown and send in a message"
-
         url = args.strip()
         if not url:
             self.io.tool_error(t("web.provide_url"))
@@ -334,7 +324,6 @@ class Commands:
 
 
     def cmd_commit(self, args=None):
-        "Commit edits to the repo made outside the chat (commit message optional)"
         try:
             self.raw_cmd_commit(args)
         except ANY_GIT_ERROR as err:
@@ -353,8 +342,6 @@ class Commands:
         self.coder.repo.commit(message=commit_message, coder=self.coder)
 
     def cmd_lint(self, args="", fnames=None):
-        "Lint and fix in-chat files or all dirty files if none in chat"
-
         if not self.coder.repo:
             self.io.tool_error(t("git.no_repo"))
             return
@@ -406,8 +393,6 @@ class Commands:
             self.cmd_commit("")
 
     def cmd_clear(self, args):
-        "Clear the chat history"
-
         self._clear_chat_history()
         self.io.tool_output(t("history.cleared"))
 
@@ -432,13 +417,11 @@ class Commands:
         self.coder.cur_messages = []
 
     def cmd_reset(self, args):
-        "Drop all files and clear the chat history"
         self._drop_all_files()
         self._clear_chat_history()
         self.io.tool_output(t("chat.all_dropped"))
 
     def cmd_tokens(self, args):
-        "Report on the number of tokens used by the current chat context"
 
         res = []
 
@@ -514,10 +497,10 @@ class Commands:
             cost = tk * (self.coder.main_model.info.get("input_cost_per_token") or 0)
             total_cost += cost
             msg = msg.ljust(col_width)
-            self.io.tool_output(f"${cost:7.4f} {fmt(tk)} {msg} {tip}")  # noqa: E231
+            self.io.tool_output(f"${cost:7.4f} {fmt(tk)} {msg} {tip}")
 
         self.io.tool_output("=" * (width + cost_width + 1))
-        self.io.tool_output(f"${total_cost:7.4f} {fmt(total)} {t('tokens.total')}")  # noqa: E231
+        self.io.tool_output(f"${total_cost:7.4f} {fmt(total)} {t('tokens.total')}")
 
         limit = self.coder.main_model.info.get("max_input_tokens") or 0
         if not limit:
@@ -537,7 +520,6 @@ class Commands:
         self.io.tool_output(f"{cost_pad}{fmt(limit)} {t('tokens.max_size', count=limit)}")
 
     def cmd_undo(self, args):
-        "Undo the last git commit if it was done by Lora Code"
         try:
             self.raw_cmd_undo(args)
         except ANY_GIT_ERROR as err:
@@ -624,7 +606,6 @@ class Commands:
             return prompts.undo_command_reply
 
     def cmd_diff(self, args=""):
-        "Display the diff of changes since the last message"
         try:
             self.raw_cmd_diff(args)
         except ANY_GIT_ERROR as err:
@@ -755,7 +736,6 @@ class Commands:
         return res
 
     def cmd_add(self, args):
-        "Add files to the chat so Lora Code can edit them or review them in detail"
 
         all_matched_files = set()
 
@@ -847,7 +827,6 @@ class Commands:
         return all_files
 
     def cmd_drop(self, args=""):
-        "Remove files from the chat session to free up context space"
 
         if not args.strip():
             if self.original_read_only_fnames:
@@ -895,7 +874,6 @@ class Commands:
                     self.io.tool_output(t("file.removed", filename=matched_file))
 
     def cmd_git(self, args):
-        "Run a git command (output excluded from chat)"
         combined_output = None
         try:
             args = "git " + args
@@ -921,7 +899,6 @@ class Commands:
         self.io.tool_output(combined_output)
 
     def cmd_test(self, args):
-        "Run a shell command and add the output to the chat on non-zero exit code"
         if not args and self.coder.test_cmd:
             args = self.coder.test_cmd
 
@@ -941,7 +918,6 @@ class Commands:
         return errors
 
     def cmd_run(self, args, add_on_nonzero_exit=False):
-        "Run a shell command and optionally add the output to the chat (alias: !)"
         exit_status, combined_output = run_cmd(
             args, verbose=self.verbose, error_print=self.io.tool_error, cwd=self.coder.root
         )
@@ -980,16 +956,13 @@ class Commands:
         return None
 
     def cmd_exit(self, args):
-        "Exit the application"
         self.coder.event("exit", reason="/exit")
         sys.exit()
 
     def cmd_quit(self, args):
-        "Exit the application"
         self.cmd_exit(args)
 
     def cmd_ls(self, args):
-        "List all known files and indicate which are included in the chat session"
 
         files = self.coder.get_all_relative_files()
 
@@ -1049,7 +1022,6 @@ class Commands:
         self.io.tool_output(t("help.usage"))
 
     def cmd_help(self, args):
-        "Ask questions about Lora Code"
 
         if not args.strip():
             self.basic_help()
@@ -1112,19 +1084,15 @@ class Commands:
         raise CommandCompletionException()
 
     def cmd_ask(self, args):
-        """Ask questions about the code base without editing any files. If no prompt provided, switches to ask mode."""  # noqa
         return self._generic_chat_command(args, "ask")
 
     def cmd_code(self, args):
-        """Ask for changes to your code. If no prompt provided, switches to code mode."""  # noqa
         return self._generic_chat_command(args, self.coder.main_model.edit_format)
 
     def cmd_architect(self, args):
-        """Enter architect/editor mode using 2 different models. If no prompt provided, switches to architect/editor mode."""  # noqa
         return self._generic_chat_command(args, "architect")
 
     def cmd_context(self, args):
-        """Enter context mode to see surrounding code context. If no prompt provided, switches to context mode."""  # noqa
         return self._generic_chat_command(args, "context", placeholder=args.strip() or None)
 
     def _generic_chat_command(self, args, edit_format, placeholder=None):
@@ -1152,7 +1120,6 @@ class Commands:
         )
 
     def get_help_md(self):
-        "Show help about all commands in markdown"
 
         res = """
 |Command|Description|
@@ -1172,7 +1139,6 @@ class Commands:
         return res
 
     def cmd_voice(self, args):
-        "Record and transcribe voice input"
 
         if not self.voice:
             if "OPENAI_API_KEY" not in os.environ:
@@ -1198,8 +1164,6 @@ class Commands:
             self.io.placeholder = text
 
     def cmd_paste(self, args):
-        """Paste image/text from the clipboard into the chat.\
-        Optionally provide a name for the image."""
         try:
             image = ImageGrab.grabclipboard()
             if isinstance(image, Image.Image):
@@ -1245,7 +1209,6 @@ class Commands:
             self.io.tool_error(f"Error processing clipboard content: {e}")
 
     def cmd_read_only(self, args):
-        "Add files to the chat that are for reference only, or turn added files to read-only"
         if not args.strip():
             for fname in list(self.coder.abs_fnames):
                 self.coder.abs_fnames.remove(fname)
@@ -1328,7 +1291,6 @@ class Commands:
             self.io.tool_output(f"No new files added from directory {original_name}.")
 
     def cmd_map(self, args):
-        "Print out the current repository map"
         repo_map = self.coder.get_repo_map()
         if repo_map:
             self.io.tool_output(repo_map)
@@ -1336,13 +1298,11 @@ class Commands:
             self.io.tool_output(t("repomap.no_map"))
 
     def cmd_map_refresh(self, args):
-        "Force a refresh of the repository map"
         repo_map = self.coder.get_repo_map(force_refresh=True)
         if repo_map:
             self.io.tool_output(t("repomap.refreshed"))
 
     def cmd_settings(self, args):
-        "Print out the current settings"
         settings = format_settings(self.parser, self.args)
         announcements = "\n".join(self.coder.get_announcements())
 
@@ -1374,7 +1334,6 @@ class Commands:
         return self.completions_raw_read_only(document, complete_event)
 
     def cmd_load(self, args):
-        "Load and execute commands from a file"
         if not args.strip():
             self.io.tool_error(t("load.provide_file"))
             return
@@ -1406,7 +1365,6 @@ class Commands:
         return self.completions_raw_read_only(document, complete_event)
 
     def cmd_save(self, args):
-        "Save commands to a file that can reconstruct the current chat session's files"
         if not args.strip():
             self.io.tool_error(t("save.provide_file"))
             return
@@ -1430,11 +1388,9 @@ class Commands:
             self.io.tool_error(t("save.error", error=str(e)))
 
     def cmd_multiline_mode(self, args):
-        "Toggle multiline mode (swaps behavior of Enter and Meta+Enter)"
         self.io.toggle_multiline_mode()
 
     def cmd_language(self, args):
-        "Switch the UI language (en=English, tr=Türkçe)"
         from loracode.i18n import set_language, get_current_language, get_supported_languages, t
         
         args = args.strip().lower()
@@ -1458,12 +1414,10 @@ class Commands:
             self.io.tool_output(f"Available languages: {', '.join(supported.keys())}")
 
     def completions_language(self):
-        "Completions for /language command"
         from loracode.i18n import get_supported_languages
         return list(get_supported_languages().keys())
 
     def cmd_copy(self, args):
-        "Copy the last assistant message to the clipboard"
         all_messages = self.coder.done_messages + self.coder.cur_messages
         assistant_messages = [msg for msg in reversed(all_messages) if msg["role"] == "assistant"]
 
@@ -1490,7 +1444,6 @@ class Commands:
             self.io.tool_error(t("clipboard.unexpected_error", error=str(e)))
 
     def cmd_report(self, args):
-        "Report a problem by opening a GitHub Issue"
         from loracode.report import report_github_issue
 
         announcements = "\n".join(self.coder.get_announcements())
@@ -1504,18 +1457,15 @@ class Commands:
         report_github_issue(issue_text, title=title, confirm=False)
 
     def cmd_editor(self, initial_content=""):
-        "Open an editor to write a prompt"
 
         user_input = pipe_editor(initial_content, suffix="md", editor=self.editor)
         if user_input.strip():
             self.io.set_placeholder(user_input.rstrip())
 
     def cmd_edit(self, args=""):
-        "Alias for /editor: Open an editor to write a prompt"
         return self.cmd_editor(args)
 
     def cmd_think_tokens(self, args):
-        """Set the thinking token budget, eg: 8096, 8k, 10.5k, 0.5M, or 0 to disable."""
         model = self.coder.main_model
 
         if not args.strip():
@@ -1547,8 +1497,6 @@ class Commands:
         self.io.tool_output(announcements)
 
     def cmd_copy_context(self, args=None):
-        """Copy the current chat context as markdown, suitable to paste into a web UI"""
-
         chunks = self.coder.format_chat_chunks()
 
         markdown = ""
@@ -1588,7 +1536,6 @@ Just show me the edits I need to make.
             self.io.tool_error(t("clipboard.unexpected_error", error=str(e)))
 
     def cmd_auth(self, args):
-        "Manage Lora Code authentication (login, logout, status)"
         args = args.strip().lower()
         
         if args == "login":
@@ -1606,7 +1553,6 @@ Just show me the edits I need to make.
             self.io.tool_output("  " + t("auth.cmd_status"))
 
     def _auth_login(self):
-        """Initiate login flow using GitHub Device Flow."""
         try:
             auth = LoraCodeAuth()
             
@@ -1648,7 +1594,6 @@ Just show me the edits I need to make.
             self.io.tool_error(t("auth.error", error=str(e)))
 
     def _auth_logout(self):
-        """Clear stored credentials."""
         try:
             auth = LoraCodeAuth()
             
@@ -1668,7 +1613,6 @@ Just show me the edits I need to make.
             self.io.tool_error(t("auth.logout_error", error=str(e)))
 
     def _auth_status(self):
-        """Show current authentication status and user info."""
         try:
             auth = LoraCodeAuth()
             credentials = auth.get_credentials()
@@ -1744,11 +1688,9 @@ Just show me the edits I need to make.
             self.io.tool_error(t("auth.status_error", error=str(e)))
 
     def completions_auth(self):
-        """Provide completions for auth subcommands."""
         return ["login", "logout", "status"]
 
     def cmd_auto_approve(self, args):
-        "Set categories to auto-approve (always accept)"
         if not args.strip():
             self.io.tool_output("Usage: /auto-approve <category1,category2,...>")
             self.io.tool_output(f"Available categories: {', '.join(ApprovalCategory.all_categories())}, all")
@@ -1765,13 +1707,11 @@ Just show me the edits I need to make.
             self.io.tool_error("Auto-approve manager not available")
             return
         
-        # Handle 'all' special case
         if "all" in categories:
             manager.set_all(ApprovalRule.ALWAYS)
             self.io.tool_output("All categories set to auto-approve")
             return
         
-        # Validate and apply categories
         valid_categories = ApprovalCategory.all_categories()
         applied = []
         invalid = []
@@ -1790,11 +1730,9 @@ Just show me the edits I need to make.
             self.io.tool_warning(f"Invalid categories ignored: {', '.join(invalid)}")
 
     def completions_auto_approve(self):
-        """Provide completions for auto-approve command."""
         return ApprovalCategory.all_categories() + ["all"]
 
     def cmd_auto_reject(self, args):
-        "Set categories to auto-reject (always deny)"
         if not args.strip():
             self.io.tool_output("Usage: /auto-reject <category1,category2,...>")
             self.io.tool_output(f"Available categories: {', '.join(ApprovalCategory.all_categories())}, all")
@@ -1811,13 +1749,11 @@ Just show me the edits I need to make.
             self.io.tool_error("Auto-approve manager not available")
             return
         
-        # Handle 'all' special case
         if "all" in categories:
             manager.set_all(ApprovalRule.NEVER)
             self.io.tool_output("All categories set to auto-reject")
             return
         
-        # Validate and apply categories
         valid_categories = ApprovalCategory.all_categories()
         applied = []
         invalid = []
@@ -1836,11 +1772,9 @@ Just show me the edits I need to make.
             self.io.tool_warning(f"Invalid categories ignored: {', '.join(invalid)}")
 
     def completions_auto_reject(self):
-        """Provide completions for auto-reject command."""
         return ApprovalCategory.all_categories() + ["all"]
 
     def cmd_auto_ask(self, args):
-        "Reset categories to prompt mode (ask user)"
         if not args.strip():
             self.io.tool_output("Usage: /auto-ask <category1,category2,...>")
             self.io.tool_output(f"Available categories: {', '.join(ApprovalCategory.all_categories())}, all")
@@ -1857,13 +1791,11 @@ Just show me the edits I need to make.
             self.io.tool_error("Auto-approve manager not available")
             return
         
-        # Handle 'all' special case
         if "all" in categories:
             manager.set_all(ApprovalRule.ASK)
             self.io.tool_output("All categories reset to ask mode")
             return
         
-        # Validate and apply categories
         valid_categories = ApprovalCategory.all_categories()
         applied = []
         invalid = []
@@ -1882,11 +1814,9 @@ Just show me the edits I need to make.
             self.io.tool_warning(f"Invalid categories ignored: {', '.join(invalid)}")
 
     def completions_auto_ask(self):
-        """Provide completions for auto-ask command."""
         return ApprovalCategory.all_categories() + ["all"]
 
     def cmd_auto_status(self, args):
-        "Display current auto-approval settings"
         manager = self.io.auto_approve_manager
         if not manager:
             self.io.tool_error("Auto-approve manager not available")
@@ -1895,7 +1825,6 @@ Just show me the edits I need to make.
         self.io.tool_output(manager.get_status_display())
 
     def cmd_auto_history(self, args):
-        "Display recent auto-approval decisions"
         manager = self.io.auto_approve_manager
         if not manager:
             self.io.tool_error("Auto-approve manager not available")
@@ -1919,9 +1848,441 @@ Just show me the edits I need to make.
                 f"  [{timestamp}] {decision.category.value}: {result_str} {auto_str}"
             )
             if decision.subject:
-                # Truncate long subjects
                 subject = decision.subject[:50] + "..." if len(decision.subject) > 50 else decision.subject
                 self.io.tool_output(f"           Subject: {subject}")
+
+    def cmd_hooks(self, args):
+        args = args.strip()
+        hook_manager = getattr(self.coder, 'hook_manager', None) if self.coder else None
+        
+        if not hook_manager:
+            from pathlib import Path
+            project_root = Path(self.coder.root) if self.coder and self.coder.root else Path.cwd()
+            hook_manager = HookManager(project_root, self.io)
+            hook_manager.load_hooks()
+        
+        parts = args.split(maxsplit=1)
+        subcommand = parts[0].lower() if parts else ""
+        subargs = parts[1] if len(parts) > 1 else ""
+        
+        if subcommand == "enable":
+            self._hooks_enable(hook_manager, subargs)
+        elif subcommand == "disable":
+            self._hooks_disable(hook_manager, subargs)
+        elif subcommand == "test":
+            self._hooks_test(hook_manager, subargs)
+        else:
+            self._hooks_list(hook_manager)
+    
+    def _hooks_list(self, hook_manager):
+        hooks = hook_manager.list_hooks()
+        
+        has_hooks = any(len(event_hooks) > 0 for event_hooks in hooks.values())
+        
+        if not has_hooks:
+            self.io.tool_output("📋 Kayıtlı Hook Yok")
+            self.io.tool_output("")
+            self.io.tool_output("Hook eklemek için .loracode/settings.json dosyasını düzenleyin.")
+            self.io.tool_output("Örnek:")
+            self.io.tool_output('  {')
+            self.io.tool_output('    "hooks": {')
+            self.io.tool_output('      "BeforeTool": [')
+            self.io.tool_output('        {')
+            self.io.tool_output('          "name": "test-runner",')
+            self.io.tool_output('          "command": "python run_tests.py",')
+            self.io.tool_output('          "description": "Kod değişikliğinden önce testleri çalıştır"')
+            self.io.tool_output('        }')
+            self.io.tool_output('      ]')
+            self.io.tool_output('    }')
+            self.io.tool_output('  }')
+            return
+        
+        self.io.tool_output("📋 Kayıtlı Hook'lar:")
+        self.io.tool_output("")
+        
+        for event in HookEvent:
+            event_hooks = hooks[event]
+            if not event_hooks:
+                continue
+            
+            self.io.tool_output(f"{event.value}:")
+            
+            for hook in event_hooks:
+                is_enabled = hook_manager.is_hook_enabled(hook.name)
+                status_icon = "✅" if is_enabled else "❌"
+                status_text = "" if is_enabled else " (devre dışı)"
+                
+                description = hook.description if hook.description else "Açıklama yok"
+                
+                self.io.tool_output(f"  {status_icon} {hook.name:<20} - {description}{status_text}")
+            
+            self.io.tool_output("")
+        
+        self.io.tool_output("💡 İpucu: /hooks enable <isim> veya /hooks disable <isim> ile durumu değiştirin")
+        self.io.tool_output("         /hooks test <isim> ile hook'u test edin")
+    
+    def _hooks_enable(self, hook_manager, hook_name):
+        hook_name = hook_name.strip()
+        
+        if not hook_name:
+            self.io.tool_error("Hook adı belirtilmedi. Kullanım: /hooks enable <isim>")
+            return
+        
+        hook = hook_manager.get_hook_by_name(hook_name)
+        if not hook:
+            self.io.tool_error(f"Hook bulunamadı: {hook_name}")
+            self._suggest_hooks(hook_manager)
+            return
+        
+        if hook_manager.enable_hook(hook_name):
+            self.io.tool_output(f"✅ Hook etkinleştirildi: {hook_name}")
+            
+            self._persist_hook_state(hook_manager, hook_name, enabled=True)
+        else:
+            self.io.tool_error(f"Hook etkinleştirilemedi: {hook_name}")
+    
+    def _hooks_disable(self, hook_manager, hook_name):
+        hook_name = hook_name.strip()
+        
+        if not hook_name:
+            self.io.tool_error("Hook adı belirtilmedi. Kullanım: /hooks disable <isim>")
+            return
+        
+        hook = hook_manager.get_hook_by_name(hook_name)
+        if not hook:
+            self.io.tool_error(f"Hook bulunamadı: {hook_name}")
+            self._suggest_hooks(hook_manager)
+            return
+        
+        if hook_manager.disable_hook(hook_name):
+            self.io.tool_output(f"❌ Hook devre dışı bırakıldı: {hook_name}")
+            
+            self._persist_hook_state(hook_manager, hook_name, enabled=False)
+        else:
+            self.io.tool_error(f"Hook devre dışı bırakılamadı: {hook_name}")
+    
+    def _hooks_test(self, hook_manager, hook_name):
+        hook_name = hook_name.strip()
+        
+        if not hook_name:
+            self.io.tool_error("Hook adı belirtilmedi. Kullanım: /hooks test <isim>")
+            return
+        
+        hook = hook_manager.get_hook_by_name(hook_name)
+        if not hook:
+            self.io.tool_error(f"Hook bulunamadı: {hook_name}")
+            self._suggest_hooks(hook_manager)
+            return
+        
+        self.io.tool_output(f"🧪 Hook test ediliyor: {hook_name}")
+        self.io.tool_output(f"   Komut: {hook.command}")
+        self.io.tool_output(f"   Timeout: {hook.timeout}ms")
+        self.io.tool_output("")
+        
+        result = hook_manager.test_hook(hook_name)
+        
+        if result is None:
+            self.io.tool_error("Hook test edilemedi")
+            return
+        
+        if result.timed_out:
+            self.io.tool_error(f"⏱️  Timeout: Hook {hook.timeout}ms içinde tamamlanamadı")
+        elif result.exit_code == 0:
+            self.io.tool_output(f"✅ Başarılı (çıkış kodu: 0)")
+        elif result.exit_code == 2:
+            self.io.tool_error(f"🚫 Engelleyici hata (çıkış kodu: 2)")
+        else:
+            self.io.tool_warning(f"⚠️  Uyarı (çıkış kodu: {result.exit_code})")
+        
+        if result.stdout.strip():
+            self.io.tool_output("")
+            self.io.tool_output("Stdout:")
+            for line in result.stdout.strip().split('\n')[:10]:
+                self.io.tool_output(f"  {line}")
+        
+        if result.stderr.strip():
+            self.io.tool_output("")
+            self.io.tool_output("Stderr:")
+            for line in result.stderr.strip().split('\n')[:10]:
+                self.io.tool_error(f"  {line}")
+    
+    def _suggest_hooks(self, hook_manager):
+        all_hooks = []
+        for event_hooks in hook_manager.hooks.values():
+            all_hooks.extend([h.name for h in event_hooks])
+        
+        if all_hooks:
+            self.io.tool_output("Mevcut hook'lar: " + ", ".join(all_hooks))
+    
+    def _persist_hook_state(self, hook_manager, hook_name, enabled):
+        from pathlib import Path
+        import json
+        
+        project_root = Path(self.coder.root) if self.coder and self.coder.root else Path.cwd()
+        settings_path = project_root / ".loracode" / "settings.json"
+        
+        settings = {}
+        if settings_path.exists():
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        
+        if "hooks" not in settings:
+            settings["hooks"] = {}
+        
+        if "disabled" not in settings["hooks"]:
+            settings["hooks"]["disabled"] = []
+        
+        disabled_list = settings["hooks"]["disabled"]
+        
+        if enabled:
+            if hook_name in disabled_list:
+                disabled_list.remove(hook_name)
+        else:
+            if hook_name not in disabled_list:
+                disabled_list.append(hook_name)
+        
+        try:
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+        except OSError as e:
+            self.io.tool_warning(f"Settings dosyasına yazılamadı: {e}")
+    
+    def completions_hooks(self):
+        return ["enable", "disable", "test"]
+
+    
+    def _get_checkpoint_manager(self):
+        project_root = Path(self.coder.root) if self.coder and self.coder.root else Path.cwd()
+        
+        checkpoint_dir = None
+        if self.args and hasattr(self.args, 'checkpoint_dir') and self.args.checkpoint_dir:
+            checkpoint_dir = Path(self.args.checkpoint_dir)
+        
+        return CheckpointManager(project_root, checkpoint_dir=checkpoint_dir, io=self.io)
+    
+    def cmd_checkpoint_save(self, args):
+        args = args.strip()
+        
+        checkpoint_manager = self._get_checkpoint_manager()
+        
+        name = args if args else None
+        
+        if name and checkpoint_manager.exists(name):
+            if not self.io.confirm_ask(
+                f"Checkpoint '{name}' zaten mevcut. Üzerine yazmak istiyor musunuz?",
+                default="n"
+            ):
+                self.io.tool_output("Checkpoint kaydetme iptal edildi.")
+                return
+        
+        try:
+            saved_name = checkpoint_manager.save(name, self.coder)
+            
+            info = checkpoint_manager.get_info(saved_name)
+            
+            self.io.tool_output(f"💾 Checkpoint kaydedildi: {saved_name}")
+            if info:
+                self.io.tool_output(f"   📁 Dosyalar: {info.get('file_count', 0)} dosya")
+                self.io.tool_output(f"   💬 Mesajlar: {info.get('message_count', 0)} mesaj")
+                self.io.tool_output(f"   📍 Konum: {checkpoint_manager.checkpoint_dir / f'{saved_name}.json'}")
+        except Exception as e:
+            self.io.tool_error(f"Checkpoint kaydedilemedi: {e}")
+    
+    def cmd_cp_save(self, args):
+        return self.cmd_checkpoint_save(args)
+    
+    def cmd_checkpoint_load(self, args):
+        args = args.strip()
+        
+        if not args:
+            self.io.tool_error("Checkpoint adı belirtilmedi. Kullanım: /checkpoint-load <isim>")
+            self.io.tool_output("Mevcut checkpoint'leri görmek için: /checkpoints")
+            return
+        
+        checkpoint_manager = self._get_checkpoint_manager()
+        
+        if not checkpoint_manager.exists(args):
+            self.io.tool_error(f"Checkpoint bulunamadı: {args}")
+            self._suggest_checkpoints(checkpoint_manager)
+            return
+        
+        try:
+            checkpoint = checkpoint_manager.load(args, self.coder)
+            
+            info = checkpoint_manager.get_info(args)
+            
+            self.io.tool_output(f"📂 Checkpoint yüklendi: {args}")
+            if info:
+                self.io.tool_output(f"   📅 Kaydedilme: {info.get('created_at', 'Bilinmiyor')[:19].replace('T', ' ')}")
+                self.io.tool_output(f"   💬 Mesajlar: {info.get('message_count', 0)} mesaj geri yüklendi")
+                self.io.tool_output(f"   📁 Dosyalar: {len(info.get('files', [])) + len(info.get('read_only_files', []))} dosya eklendi")
+            
+            missing_files = checkpoint_manager._validate_files(checkpoint)
+            if missing_files:
+                self.io.tool_warning(f"   ⚠️  Uyarı: {len(missing_files)} dosya bulunamadı ({', '.join(missing_files[:3])}{'...' if len(missing_files) > 3 else ''})")
+        except FileNotFoundError as e:
+            self.io.tool_error(f"Checkpoint bulunamadı: {e}")
+        except ValueError as e:
+            self.io.tool_error(f"Geçersiz checkpoint formatı: {e}")
+        except Exception as e:
+            self.io.tool_error(f"Checkpoint yüklenemedi: {e}")
+    
+    def cmd_cp_load(self, args):
+        return self.cmd_checkpoint_load(args)
+    
+    def cmd_checkpoints(self, args):
+        checkpoint_manager = self._get_checkpoint_manager()
+        
+        checkpoints = checkpoint_manager.list_checkpoints()
+        
+        if not checkpoints:
+            self.io.tool_output("💾 Kayıtlı Checkpoint Yok")
+            self.io.tool_output("")
+            self.io.tool_output("Checkpoint kaydetmek için: /checkpoint-save [isim]")
+            return
+        
+        self.io.tool_output("💾 Kayıtlı Checkpoint'ler:")
+        self.io.tool_output("")
+        
+        self.io.tool_output(f"  {'İsim':<20}  {'Tarih':<17}  {'Mesaj':>5}  {'Dosya':>5}")
+        self.io.tool_output(f"  {'─' * 20}  {'─' * 17}  {'─' * 5}  {'─' * 5}")
+        
+        for cp in checkpoints:
+            name = cp.get('name', '')[:20]
+            created_at = cp.get('created_at', '')[:16].replace('T', ' ')
+            message_count = cp.get('message_count', 0)
+            file_count = cp.get('file_count', 0)
+            
+            self.io.tool_output(f"  {name:<20}  {created_at:<17}  {message_count:>5}  {file_count:>5}")
+        
+        self.io.tool_output("")
+        self.io.tool_output("💡 İpucu: /checkpoint-load <isim> ile yükleyin")
+    
+    def cmd_cp(self, args):
+        return self.cmd_checkpoints(args)
+    
+    def cmd_checkpoint(self, args):
+        args = args.strip()
+        
+        parts = args.split(maxsplit=1)
+        subcommand = parts[0].lower() if parts else ""
+        subargs = parts[1] if len(parts) > 1 else ""
+        
+        if subcommand == "delete":
+            self._checkpoint_delete(subargs)
+        elif subcommand == "info":
+            self._checkpoint_info(subargs)
+        else:
+            self.io.tool_output("Checkpoint yönetim komutları:")
+            self.io.tool_output("")
+            self.io.tool_output("  /checkpoint delete <isim>  - Checkpoint'i sil")
+            self.io.tool_output("  /checkpoint info <isim>    - Checkpoint detaylarını göster")
+            self.io.tool_output("")
+            self.io.tool_output("Diğer checkpoint komutları:")
+            self.io.tool_output("  /checkpoints veya /cp      - Tüm checkpoint'leri listele")
+            self.io.tool_output("  /checkpoint-save [isim]    - Checkpoint kaydet")
+            self.io.tool_output("  /checkpoint-load <isim>    - Checkpoint yükle")
+    
+    def _checkpoint_delete(self, name):
+        name = name.strip()
+        
+        if not name:
+            self.io.tool_error("Checkpoint adı belirtilmedi. Kullanım: /checkpoint delete <isim>")
+            return
+        
+        checkpoint_manager = self._get_checkpoint_manager()
+        
+        if not checkpoint_manager.exists(name):
+            self.io.tool_error(f"Checkpoint bulunamadı: {name}")
+            self._suggest_checkpoints(checkpoint_manager)
+            return
+        
+        if not self.io.confirm_ask(f"'{name}' checkpoint'ini silmek istediğinizden emin misiniz?", default="n"):
+            self.io.tool_output("Silme işlemi iptal edildi.")
+            return
+        
+        if checkpoint_manager.delete(name):
+            self.io.tool_output(f"🗑️  Checkpoint silindi: {name}")
+        else:
+            self.io.tool_error(f"Checkpoint silinemedi: {name}")
+    
+    def _checkpoint_info(self, name):
+        name = name.strip()
+        
+        if not name:
+            self.io.tool_error("Checkpoint adı belirtilmedi. Kullanım: /checkpoint info <isim>")
+            return
+        
+        checkpoint_manager = self._get_checkpoint_manager()
+        
+        info = checkpoint_manager.get_info(name)
+        
+        if not info:
+            self.io.tool_error(f"Checkpoint bulunamadı: {name}")
+            self._suggest_checkpoints(checkpoint_manager)
+            return
+        
+        self.io.tool_output(f"📋 Checkpoint Detayları: {name}")
+        self.io.tool_output("")
+        self.io.tool_output(f"  Versiyon:      {info.get('version', 'Bilinmiyor')}")
+        self.io.tool_output(f"  Oluşturulma:   {info.get('created_at', 'Bilinmiyor')[:19].replace('T', ' ')}")
+        self.io.tool_output(f"  Model:         {info.get('model', 'Bilinmiyor')}")
+        self.io.tool_output(f"  Edit Format:   {info.get('edit_format', 'Bilinmiyor')}")
+        self.io.tool_output(f"  Açıklama:      {info.get('description', '-')}")
+        self.io.tool_output("")
+        self.io.tool_output(f"  Toplam Mesaj:  {info.get('message_count', 0)}")
+        self.io.tool_output(f"    - Done:      {info.get('done_message_count', 0)}")
+        self.io.tool_output(f"    - Current:   {info.get('cur_message_count', 0)}")
+        self.io.tool_output("")
+        
+        files = info.get('files', [])
+        read_only_files = info.get('read_only_files', [])
+        
+        if files:
+            self.io.tool_output(f"  Düzenlenebilir Dosyalar ({len(files)}):")
+            for f in files[:5]:
+                self.io.tool_output(f"    - {f}")
+            if len(files) > 5:
+                self.io.tool_output(f"    ... ve {len(files) - 5} dosya daha")
+        
+        if read_only_files:
+            self.io.tool_output(f"  Salt Okunur Dosyalar ({len(read_only_files)}):")
+            for f in read_only_files[:5]:
+                self.io.tool_output(f"    - {f}")
+            if len(read_only_files) > 5:
+                self.io.tool_output(f"    ... ve {len(read_only_files) - 5} dosya daha")
+    
+    def _suggest_checkpoints(self, checkpoint_manager):
+        checkpoints = checkpoint_manager.list_checkpoints()
+        
+        if checkpoints:
+            names = [cp.get('name', '') for cp in checkpoints[:5]]
+            self.io.tool_output("Mevcut checkpoint'ler: " + ", ".join(names))
+            if len(checkpoints) > 5:
+                self.io.tool_output(f"... ve {len(checkpoints) - 5} checkpoint daha")
+    
+    def completions_checkpoint(self):
+        return ["delete", "info"]
+    
+    def completions_checkpoint_load(self):
+        checkpoint_manager = self._get_checkpoint_manager()
+        checkpoints = checkpoint_manager.list_checkpoints()
+        return [cp.get('name', '') for cp in checkpoints]
+    
+    def completions_cp_load(self):
+        return self.completions_checkpoint_load()
+    
+    def completions_checkpoint_save(self):
+        checkpoint_manager = self._get_checkpoint_manager()
+        checkpoints = checkpoint_manager.list_checkpoints()
+        return [cp.get('name', '') for cp in checkpoints]
+    
+    def completions_cp_save(self):
+        return self.completions_checkpoint_save()
 
 
 def expand_subdir(file_path):
